@@ -1,13 +1,3 @@
----
-license: apache-2.0
-pipeline_tag: text-to-video
-frameworks:
-  - PyTorch
-hardwares:
-  - NPU
-  - Atlas 800T A2
-  - Atlas 800I A2
----
 # Wan2.2推理指导
 ## 一、准备运行环境
 
@@ -21,7 +11,7 @@ hardwares:
 ### 1.1 获取CANN&MindIE安装包&环境准备
 - 设备支持
 Atlas 800I/800T A2(8*64G)推理设备：支持的卡数最小为1
-- [Atlas 800I/800T A2(8*64G)](https://www.hiascend.com/developer/download/community/result?module=pt+ie+cann&product=4&model=32)
+[Atlas 800I/800T A2(8*64G)](https://www.hiascend.com/developer/download/community/result?module=pt+ie+cann&product=4&model=32)
 - [环境准备指导](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/80RC2alpha002/softwareinst/instg/instg_0001.html)
 
 ### 1.2 CANN安装
@@ -444,7 +434,7 @@ torchrun --nproc_per_node=16 --master_port=23459 generate.py \
 | 模型 | cpu规格 | 规格 | 迭代次数 | E2E耗时（ALGO=0） | E2E耗时（ALGO=1） |
 | :-----: | :-----: | :-----: | :-----: | :-----: | :-----: |
 | Wan2.2-T2V-A14B | 64核(arm) | 81×1280×720 | 40 | 576.04s | 435.99s |
-| Wan2.2-I2V-A14B | 64核(arm) | 81×1280×720 | 40 | 575.21s | 433.54s |
+| Wan2.2-I2V-A14B | 64核(arm) | 81×1280×720 | 40 | 577.79s | 444.15s |
 | Wan2.2-TI2V-5B | 64核(arm) | 121×1280×704 | 50 | 91.92s | 84.14s |
 
 
