@@ -1,4 +1,453 @@
 ---
 license: apache-2.0
+pipeline_tag: text-to-video
+frameworks:
+  - PyTorch
+hardwares:
+  - NPU
+  - Atlas 800T A2
+  - Atlas 800I A2
 ---
+# Wan2.2推理指导
+## 一、准备运行环境
 
+  **表 1**  版本配套表
+
+  | 配套  | 版本 | 环境准备指导 |
+  | ----- | ----- |-----|
+  | Python | 3.11.10 | - |
+  | torch | 2.1.0 | - |
+
+### 1.1 获取CANN&MindIE安装包&环境准备
+- 设备支持
+Atlas 800I/800T A2(8*64G)推理设备：支持的卡数最小为1
+- [Atlas 800I/800T A2(8*64G)](https://www.hiascend.com/developer/download/community/result?module=pt+ie+cann&product=4&model=32)
+- [环境准备指导](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/80RC2alpha002/softwareinst/instg/instg_0001.html)
+
+### 1.2 CANN安装
+```shell
+# 增加软件包可执行权限，{version}表示软件版本号，{arch}表示CPU架构，{soc}表示昇腾AI处理器的版本。
+chmod +x ./Ascend-cann-toolkit_{version}_linux-{arch}.run
+chmod +x ./Ascend-cann-kernels-{soc}_{version}_linux.run
+# 校验软件包安装文件的一致性和完整性
+./Ascend-cann-toolkit_{version}_linux-{arch}.run --check
+./Ascend-cann-kernels-{soc}_{version}_linux.run --check
+# 安装
+./Ascend-cann-toolkit_{version}_linux-{arch}.run --install
+./Ascend-cann-kernels-{soc}_{version}_linux.run --install
+
+# 设置环境变量
+source /usr/local/Ascend/ascend-toolkit/set_env.sh
+```
+
+### 1.3 环境依赖安装
+```shell
+pip3 install -r requirements.txt
+```
+
+### 1.4 MindIE安装
+```shell
+# 增加软件包可执行权限，{version}表示软件版本号，{arch}表示CPU架构。
+chmod +x ./Ascend-mindie_${version}_linux-${arch}.run
+./Ascend-mindie_${version}_linux-${arch}.run --check
+
+# 方式一：默认路径安装
+./Ascend-mindie_${version}_linux-${arch}.run --install
+# 设置环境变量
+cd /usr/local/Ascend/mindie && source set_env.sh
+
+# 方式二：指定路径安装
+./Ascend-mindie_${version}_linux-${arch}.run --install-path=${AieInstallPath}
+# 设置环境变量
+cd ${AieInstallPath}/mindie && source set_env.sh
+```
+
+### 1.5 Torch_npu安装
+下载 pytorch_v{pytorchversion}_py{pythonversion}.tar.gz
+```shell
+tar -xzvf pytorch_v{pytorchversion}_py{pythonversion}.tar.gz
+# 解压后，会有whl包
+pip install torch_npu-{pytorchversion}.xxxx.{arch}.whl
+```
+
+## 二、下载权重
+
+### Wan2.2 权重及配置文件说明
+
+-  Huggingface
+
+|  模型 | 链接  |
+| ------------ | ------------ |
+| Wan2.2-T2V-A14B  |  [🤗huggingface](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B/tree/main) | 
+| Wan2.1-I2V-A14B  |  [🤗huggingface](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B/tree/main) | 
+| Wan2.1-TI2V-5B  |  [🤗huggingface](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B/tree/main) |   
+
+
+- Modelscope
+
+|  模型 | 链接  |
+| ------------ | ------------ |
+| Wan2.2-T2V-A14B  |  [	modelscope](https://modelscope.cn/models/Wan-AI/Wan2.2-T2V-A14B/files?version=master) | 
+| Wan2.1-I2V-A14B  |  [	modelscope](https://modelscope.cn/models/Wan-AI/Wan2.2-I2V-A14B/files?version=master) |  
+| Wan2.1-TI2V-5B  |  [	modelscope](https://modelscope.cn/models/Wan-AI/Wan2.2-TI2V-5B/files?version=master) |  
+
+
+## 三、Wan2.2使用
+
+### 3.1 下载到本地
+```shell
+git clone https://modelers.cn/MindIE/Wan2.2.git
+```
+
+### 3.2 Wan2.2-T2V-A14B
+使用上一步下载的权重
+```shell
+model_base="./Wan2.2-T2V-A14B/"
+```
+#### 3.2.1 等价优化
+#### 3.2.1.1 8卡性能测试
+执行命令：
+```shell
+export ALGO=0
+export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
+export TASK_QUEUE_ENABLE=2
+export CPU_AFFINITY_CONF=1
+export TOKENIZERS_PARALLELISM=false
+
+torchrun --nproc_per_node=8 --master_port=23459 generate.py \
+--task t2v-A14B \
+--ckpt_dir ${model_base} \
+--size 1280*720 \
+--frame_num 81 \
+--sample_steps 40 \
+--dit_fsdp \
+--t5_fsdp \
+--cfg_size 1 \
+--ulysses_size 8 \
+--vae_parallel \
+--prompt "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." \
+--base_seed 0
+
+```
+参数说明：
+- ALGO: 为0表示默认FA算子; 设置为1表示使用高性能FA算子
+- task: 任务类型。
+- ckpt_dir: 模型的权重路径
+- size: 生成视频的分辨率，支持(1280,720)、(832,480)分辨率
+- frame_num: 生成视频的帧数
+- sample_steps: 推理步数
+- dit_fsdp: dit使能fsdp, 用以降低显存占用
+- t5_fsdp: t5使能fsdp, 用以降低显存占用
+- cfg_size: cfg并行数
+- ulysses_size: ulysses并行数
+- vae_parallel: 使能vae并行策略
+- prompt: 文本提示词
+- base_seed: 随机种子
+
+#### 3.2.1.2 16卡性能测试
+执行命令：
+```shell
+export ALGO=0
+export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
+export TASK_QUEUE_ENABLE=2
+export CPU_AFFINITY_CONF=1
+export TOKENIZERS_PARALLELISM=false
+
+torchrun --nproc_per_node=16 --master_port=23459 generate.py \
+--task t2v-A14B \
+--ckpt_dir ${model_base} \
+--size 1280*720 \
+--frame_num 81 \
+--sample_steps 40 \
+--dit_fsdp \
+--t5_fsdp \
+--cfg_size 2 \
+--ulysses_size 8 \
+--vae_parallel \
+--prompt "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." \
+--base_seed 0 \
+```
+
+
+### 3.3 Wan2.1-I2V-A14B
+使用上一步下载的权重
+```shell
+model_base="./Wan2.1-I2V-A14B/"
+```
+
+#### 3.3.1 等价优化
+#### 3.3.1.1 8卡性能测试
+
+执行命令：
+```shell
+export ALGO=0
+export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
+export TASK_QUEUE_ENABLE=2
+export CPU_AFFINITY_CONF=1
+export TOKENIZERS_PARALLELISM=false
+
+torchrun --nproc_per_node=8 generate.py \
+--task i2v-A14B \
+--ckpt_dir ${model_base} \
+--size 1280*720 \
+--frame_num 81 \
+--sample_steps 40 \
+--dit_fsdp \
+--t5_fsdp \
+--cfg_size 1 \
+--ulysses_size 8 \
+--vae_parallel \
+--image examples/i2v_input.JPG \
+--prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
+--base_seed 0 \
+```
+参数说明：
+- ALGO: 为0表示默认FA算子; 设置为1表示使用高性能FA算子
+- task: 任务类型。
+- ckpt_dir: 模型的权重路径
+- size: 生成视频的分辨率，支持(1280,720)、(832,480)分辨率
+- frame_num: 生成视频的帧数
+- sample_steps: 推理步数
+- dit_fsdp: dit使能fsdp, 用以降低显存占用
+- t5_fsdp: t5使能fsdp, 用以降低显存占用
+- cfg_size: cfg并行数
+- ulysses_size: ulysses并行数
+- vae_parallel: 使能vae并行策略
+- image: 输入图片路径
+- prompt: 文本提示词
+- base_seed: 随机种子
+
+#### 3.3.1.2 16卡性能测试
+执行命令：
+```shell
+export ALGO=0
+export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
+export TASK_QUEUE_ENABLE=2
+export CPU_AFFINITY_CONF=1
+export TOKENIZERS_PARALLELISM=false
+
+torchrun --nproc_per_node=16 --master_port=23459 generate.py \
+--task i2v-A14B \
+--ckpt_dir ${model_base} \
+--size 1280*720 \
+--frame_num 81 \
+--sample_steps 40 \
+--dit_fsdp \
+--t5_fsdp \
+--cfg_size 2 \
+--ulysses_size 8 \
+--vae_parallel \
+--image examples/i2v_input.JPG \
+--prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
+--base_seed 0
+```
+
+### 3.4 Wan2.1-TI2V-5B
+使用上一步下载的权重
+```shell
+model_base="./Wan2.1-TI2V-5B/"
+```
+
+#### 3.4.1 等价优化
+#### 3.4.1.1 单卡性能测试
+执行命令：
+```shell
+export ALGO=0
+export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
+export TASK_QUEUE_ENABLE=2
+export CPU_AFFINITY_CONF=1
+export TOKENIZERS_PARALLELISM=false
+
+python generate.py \
+--task ti2v-5B \
+--ckpt_dir ${model_base} \
+--size 1280*704 \
+--frame_num 121 \
+--sample_steps 50 \
+--image examples/i2v_input.JPG \
+--prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
+--base_seed 0 
+```
+参数说明：
+- ALGO: 为0表示默认FA算子；设置为1表示使用高性能FA算子
+- task: 任务类型。
+- ckpt_dir: 模型的权重路径
+- size: 生成视频的分辨率，支持(1280,720)、(832,480)分辨率
+- frame_num: 生成视频的帧数
+- sample_steps: 推理步数
+- image: 输入图片路径
+- prompt: 文本提示词
+- base_seed: 随机种子
+
+
+#### 3.4.1.2 8卡性能测试
+
+执行命令:
+```shell
+export ALGO=0
+export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
+export TASK_QUEUE_ENABLE=2
+export CPU_AFFINITY_CONF=1
+export TOKENIZERS_PARALLELISM=false
+torchrun --nproc_per_node=8 generate.py \
+--task ti2v-5B \
+--ckpt_dir ${model_base} \
+--size 1280*704 \
+--frame_num 121 \
+--sample_steps 50 \
+--dit_fsdp \
+--t5_fsdp \
+--cfg_size 1 \
+--ulysses_size 8 \
+--image examples/i2v_input.JPG \
+--prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
+--base_seed 0
+```
+参数说明：
+- ALGO: 为0表示默认FA算子；设置为1表示使用高性能FA算子
+- task: 任务类型。
+- ckpt_dir: 模型的权重路径
+- size: 生成视频的分辨率，支持(1280,720)、(832,480)分辨率
+- frame_num: 生成视频的帧数
+- sample_steps: 推理步数
+- dit_fsdp: dit使能fsdp, 用以降低显存占用
+- t5_fsdp: t5使能fsdp, 用以降低显存占用
+- cfg_size: cfg并行数
+- ulysses_size: ulysses并行数
+- vae_parallel: 使能vae并行策略
+- image: 输入图片路径
+- prompt: 文本提示词
+- base_seed: 随机种子
+
+#### 3.4.1.3 16卡性能测试
+执行命令：
+```shell
+export ALGO=0
+export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
+export TASK_QUEUE_ENABLE=2
+export CPU_AFFINITY_CONF=1
+export TOKENIZERS_PARALLELISM=false
+
+torchrun --nproc_per_node=16 --master_port=23459 generate.py \
+--task ti2v-5B \
+--ckpt_dir ${model_base} \
+--size 1280*704 \
+--frame_num 81 \
+--sample_steps 40 \
+--dit_fsdp \
+--t5_fsdp \
+--cfg_size 2 \
+--ulysses_size 8 \
+--vae_parallel \
+--image examples/i2v_input.JPG \
+--prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
+--base_seed 0
+```
+
+#### 3.4.2 算法优化
+#### 3.4.2.1 单卡性能测试
+执行命令：
+```shell
+export ALGO=0
+export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
+export TASK_QUEUE_ENABLE=2
+export CPU_AFFINITY_CONF=1
+export TOKENIZERS_PARALLELISM=false
+
+python generate.py \
+--task ti2v-5B \
+--ckpt_dir ${model_base} \
+--size 1280*704 \
+--frame_num 121 \
+--sample_steps 50 \
+--image examples/i2v_input.JPG \
+--prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
+--base_seed 0 \
+--use_attentioncache \
+--start_step 20 \
+--attentioncache_interval 2 \
+--end_step 47
+```
+参数说明：
+- ALGO: 为0表示默认FA算子；设置为1表示使用高性能FA算子
+- use_attentioncache: 使能attentioncache策略
+- start_step: cache开始的step
+- attentioncache_interval: cache重计算间隔
+- end_step: cache结束的step
+
+#### 3.4.2.2 8卡性能测试
+
+执行命令：
+```shell
+export ALGO=0
+export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
+export TASK_QUEUE_ENABLE=2
+export CPU_AFFINITY_CONF=1
+export TOKENIZERS_PARALLELISM=false
+torchrun --nproc_per_node=8 generate.py \
+--task ti2v-5B \
+--ckpt_dir ${model_base} \
+--size 1280*704 \
+--frame_num 121 \
+--sample_steps 50 \
+--dit_fsdp \
+--t5_fsdp \
+--cfg_size 1 \
+--ulysses_size 8 \
+--image examples/i2v_input.JPG \
+--prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
+--base_seed 0 \
+--use_attentioncache \
+--start_step 20 \
+--attentioncache_interval 2 \
+--end_step 47
+```
+
+#### 3.4.2.1 16卡性能测试
+执行命令：
+```shell
+export ALGO=0
+export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
+export TASK_QUEUE_ENABLE=2
+export CPU_AFFINITY_CONF=1
+export TOKENIZERS_PARALLELISM=false
+
+torchrun --nproc_per_node=16 --master_port=23459 generate.py \
+--task ti2v-5B \
+--ckpt_dir ${model_base} \
+--size 1280*704 \
+--frame_num 81 \
+--sample_steps 40 \
+--dit_fsdp \
+--t5_fsdp \
+--cfg_size 2 \
+--ulysses_size 8 \
+--vae_parallel \
+--image examples/i2v_input.JPG \
+--prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
+--base_seed 0 \
+--use_attentioncache \
+--start_step 20 \
+--attentioncache_interval 2 \
+--end_step 47
+```
+
+
+注： 
+1. 若出现OOM, 可添加环境变量 `export T5_LOAD_CPU=1`，以降低显存占用
+2. 当前仅TI2V支持attentioncache
+
+
+## 四、推理结果参考
+###  Atlas 800I A2(8*64G)性能数据
+
+| 模型 | cpu规格 | 规格 | 迭代次数 | E2E耗时（ALGO=0） | E2E耗时（ALGO=1） |
+| :-----: | :-----: | :-----: | :-----: | :-----: | :-----: |
+| Wan2.2-T2V-A14B | 64核(arm) | 81×1280×720 | 40 | 576.04s | 435.99s |
+| Wan2.2-I2V-A14B | 64核(arm) | 81×1280×720 | 40 | 590.21s | 447.54s |
+| Wan2.2-TI2V-5B | 64核(arm) | 121×1280×704 | 50 | 91.92s | 84.14s |
+
+
+## 声明
+- 本代码仓提到的数据集和模型仅作为示例，这些数据集和模型仅供您用于非商业目的，如您使用这些数据集和模型来完成示例，请您特别注意应遵守对应数据集和模型的License，如您因使用数据集或模型而产生侵权纠纷，华为不承担任何责任。
+- 如您在使用本代码仓的过程中，发现任何问题（包括但不限于功能问题、合规问题），请在本代码仓提交issue，我们将及时审视并解答。
