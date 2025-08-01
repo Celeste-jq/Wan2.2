@@ -79,17 +79,17 @@ pip install torch_npu-{pytorchversion}.xxxx.{arch}.whl
 |  模型 | 链接  |
 | ------------ | ------------ |
 | Wan2.2-T2V-A14B  |  [🤗huggingface](https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B/tree/main) | 
-| Wan2.1-I2V-A14B  |  [🤗huggingface](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B/tree/main) | 
-| Wan2.1-TI2V-5B  |  [🤗huggingface](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B/tree/main) |   
+| Wan2.2-I2V-A14B  |  [🤗huggingface](https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B/tree/main) | 
+| Wan2.2-TI2V-5B  |  [🤗huggingface](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B/tree/main) |   
 
 
-- Modelscope
+- Modelers
 
 |  模型 | 链接  |
 | ------------ | ------------ |
-| Wan2.2-T2V-A14B  |  [	modelscope](https://modelscope.cn/models/Wan-AI/Wan2.2-T2V-A14B/files?version=master) | 
-| Wan2.1-I2V-A14B  |  [	modelscope](https://modelscope.cn/models/Wan-AI/Wan2.2-I2V-A14B/files?version=master) |  
-| Wan2.1-TI2V-5B  |  [	modelscope](https://modelscope.cn/models/Wan-AI/Wan2.2-TI2V-5B/files?version=master) |  
+| Wan2.2-T2V-A14B  |  [	Modelers](https://modelers.cn/models/Modelers_Park/Wan2.2-T2V-A14B) | 
+| Wan2.2-I2V-A14B  |  [	Modelers](https://modelers.cn/models/Modelers_Park/Wan2.2-I2V-A14B ) |  
+| Wan2.2-TI2V-5B  |  [ Modelers](https://modelers.cn/models/Modelers_Park/Wan2.2-TI2V-5B) |  
 
 
 ## 三、Wan2.2使用
