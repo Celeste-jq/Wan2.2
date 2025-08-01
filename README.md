@@ -1,3 +1,13 @@
+---
+pipeline_tag: text-to-video
+frameworks:
+  - PyTorch
+hardwares:
+  - NPU
+  - Atlas 800T A2
+  - Atlas 800I A2
+license: apache-2.0
+---
 # Wan2.2推理指导
 ## 一、准备运行环境
 
@@ -155,7 +165,7 @@ torchrun --nproc_per_node=16 --master_port=23459 generate.py \
 --ulysses_size 8 \
 --vae_parallel \
 --prompt "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." \
---base_seed 0 \
+--base_seed 0
 ```
 
 
@@ -189,7 +199,7 @@ torchrun --nproc_per_node=8 generate.py \
 --vae_parallel \
 --image examples/i2v_input.JPG \
 --prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
---base_seed 0 \
+--base_seed 0
 ```
 参数说明：
 - ALGO: 为0表示默认FA算子; 设置为1表示使用高性能FA算子
