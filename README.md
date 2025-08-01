@@ -169,10 +169,10 @@ torchrun --nproc_per_node=16 --master_port=23459 generate.py \
 ```
 
 
-### 3.3 Wan2.1-I2V-A14B
+### 3.3 Wan2.2-I2V-A14B
 使用上一步下载的权重
 ```shell
-model_base="./Wan2.1-I2V-A14B/"
+model_base="./Wan2.2-I2V-A14B/"
 ```
 
 #### 3.3.1 等价优化
@@ -242,10 +242,10 @@ torchrun --nproc_per_node=16 --master_port=23459 generate.py \
 --base_seed 0
 ```
 
-### 3.4 Wan2.1-TI2V-5B
+### 3.4 Wan2.2-TI2V-5B
 使用上一步下载的权重
 ```shell
-model_base="./Wan2.1-TI2V-5B/"
+model_base="./Wan2.2-TI2V-5B/"
 ```
 
 #### 3.4.1 等价优化
