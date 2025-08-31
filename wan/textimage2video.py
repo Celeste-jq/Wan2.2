@@ -35,6 +35,8 @@ from wan.distributed.parallel_mgr import (
     get_classifier_free_guidance_rank,
     get_cfg_group
 )
+from .vae_patch_parallel import VAE_patch_parallel, set_vae_patch_parallel
+
 
 class WanTI2V:
 
@@ -49,7 +51,8 @@ class WanTI2V:
         use_sp=False,
         t5_cpu=False,
         init_on_cpu=True,
-        convert_model_dtype=False
+        convert_model_dtype=False,
+        use_vae_parallel=False,
     ):
         r"""
         Initializes the Wan text-to-video generation model components.
@@ -104,6 +107,12 @@ class WanTI2V:
             vae_pth=os.path.join(checkpoint_dir, config.vae_checkpoint),
             device=self.device,
             dtype=self.param_dtype)
+        if use_vae_parallel:
+            all_pp_group_ranks = []
+            for i in range(0, dist.get_world_size() // 8):
+                all_pp_group_ranks.append(list(range(8 * i, 8 * (i + 1))))
+            set_vae_patch_parallel(self.vae.model, 4, 2, all_pp_group_ranks= all_pp_group_ranks, decoder_decode="decoder.forward")
+            set_vae_patch_parallel(self.vae.model, 4, 2, all_pp_group_ranks= all_pp_group_ranks, decoder_decode="encoder.forward")
 
         logging.info(f"Creating WanModel from {checkpoint_dir}")
         self.model = WanModel.from_pretrained(checkpoint_dir)
@@ -412,8 +421,9 @@ class WanTI2V:
                 self.model.cpu()
                 torch.cuda.synchronize()
                 torch.cuda.empty_cache()
-            if self.rank == 0:
-                videos = self.vae.decode(x0)
+            if self.rank < 8:
+                with VAE_patch_parallel():
+                    videos = self.vae.decode(x0)
 
         del noise, latents
         del sample_scheduler
@@ -524,7 +534,8 @@ class WanTI2V:
             context = [t.to(self.device) for t in context]
             context_null = [t.to(self.device) for t in context_null]
 
-        z = self.vae.encode([img])
+        with VAE_patch_parallel():
+            z = self.vae.encode([img])
 
         @contextmanager
         def noop_no_sync():
@@ -634,8 +645,9 @@ class WanTI2V:
                 torch.cuda.synchronize()
                 torch.cuda.empty_cache()
 
-            if self.rank == 0:
-                videos = self.vae.decode(x0)
+            if self.rank < 8:
+                with VAE_patch_parallel():
+                    videos = self.vae.decode(x0)
 
         del noise, latent, x0
         del sample_scheduler
