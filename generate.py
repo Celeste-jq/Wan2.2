@@ -224,6 +224,7 @@ def _parse_args():
         default=False,
         help="Whether to convert model paramerters dtype.")
     parser = add_attentioncache_args(parser)
+    parser = add_rainfusion_args(parser)
     args = parser.parse_args()
 
     _validate_args(args)
@@ -239,6 +240,16 @@ def add_attentioncache_args(parser: argparse.ArgumentParser):
     group.add_argument("--attentioncache_interval", type=int, default=4)
     group.add_argument("--start_step", type=int, default=12)
     group.add_argument("--end_step", type=int, default=37)
+
+    return parser
+
+
+def add_rainfusion_args(parser: argparse.ArgumentParser):
+    group = parser.add_argument_group(title="Rainfusion args")
+
+    group.add_argument("--use_rainfusion", action='store_true', help="Whether to use sparse fa")
+    group.add_argument("--sparsity", type=float, default=0.64, help="Sparsity of flash attention, greater means more speed")
+    group.add_argument("--sparse_start_step", type=int, default=15)
 
     return parser
 
@@ -365,6 +376,13 @@ def generate(args):
         args.prompt = input_prompt[0]
         logging.info(f"Extended prompt: {args.prompt}")
 
+    rainfusion_config = {
+        "sparsity": args.sparsity,
+        "skip_timesteps": args.sparse_start_step,
+        "grid_size": None,
+        "atten_mask_all": None
+    }
+
     if "t2v" in args.task:
         logging.info("Creating WanT2V pipeline.")
         wan_t2v = wan.WanT2V(
@@ -382,6 +400,14 @@ def generate(args):
 
         transformer_low = wan_t2v.low_noise_model
         transformer_high = wan_t2v.high_noise_model
+
+        if args.use_rainfusion:
+            if args.dit_fsdp:
+                transformer_low._fsdp_wrapped_module.rainfusion_config = rainfusion_config
+                transformer_high._fsdp_wrapped_module.rainfusion_config = rainfusion_config
+            else:
+                transformer_low.rainfusion_config = rainfusion_config
+                transformer_high.rainfusion_config = rainfusion_config
 
         if args.tp_size > 1:
             logging.info("Initializing Tensor Parallel ...")
@@ -473,6 +499,13 @@ def generate(args):
         )
 
         transformer = wan_ti2v.model
+        
+        if args.use_rainfusion:
+            if args.dit_fsdp:
+                transformer._fsdp_wrapped_module.rainfusion_config = rainfusion_config
+            else:
+                transformer.rainfusion_config = rainfusion_config
+        
         if args.tp_size > 1:
             logging.info("Initializing Tensor Parallel ...")
             applicator = TensorParallelApplicator(args.tp_size, device_map="cpu")
@@ -553,6 +586,15 @@ def generate(args):
         
         transformer_low = wan_i2v.low_noise_model
         transformer_high = wan_i2v.high_noise_model
+
+        if args.use_rainfusion:
+            if args.dit_fsdp:
+                transformer_low._fsdp_wrapped_module.rainfusion_config = rainfusion_config
+                transformer_high._fsdp_wrapped_module.rainfusion_config = rainfusion_config
+            else:
+                transformer_low.rainfusion_config = rainfusion_config
+                transformer_high.rainfusion_config = rainfusion_config
+        
         if args.tp_size > 1:
             logging.info("Initializing Tensor Parallel ...")
             applicator = TensorParallelApplicator(args.tp_size, device_map="cpu")

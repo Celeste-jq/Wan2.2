@@ -168,6 +168,38 @@ torchrun --nproc_per_node=16 --master_port=23459 generate.py \
 --base_seed 0
 ```
 
+#### 3.2.2 算法优化-稀疏FA
+#### 3.2.2.1 8卡性能测试
+执行命令：
+```shell
+export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
+export TASK_QUEUE_ENABLE=2
+export CPU_AFFINITY_CONF=1
+export TOKENIZERS_PARALLELISM=false
+
+torchrun --nproc_per_node=8 --master_port=23459 generate.py \
+--task t2v-A14B \
+--ckpt_dir ${model_base} \
+--size 1280*720 \
+--frame_num 81 \
+--sample_steps 40 \
+--dit_fsdp \
+--t5_fsdp \
+--cfg_size 1 \
+--ulysses_size 8 \
+--vae_parallel \
+--prompt "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." \
+--use_rainfusion \
+--sparsity 0.64 \
+--spasre_start_step 15 \
+--base_seed 0
+
+```
+参数说明：
+- use_rainfusion: 使能稀疏flash attention计算
+- sparsity: 稀疏度，值为[0, 1), 稀疏度越大，加速比越高，相应精度损失更大
+- spasre_start_step: 开始稀疏的时间步，通常需要保证不小于1/4的总时间步数
+
 
 ### 3.3 Wan2.2-I2V-A14B
 使用上一步下载的权重
@@ -241,6 +273,41 @@ torchrun --nproc_per_node=16 --master_port=23459 generate.py \
 --prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
 --base_seed 0
 ```
+
+#### 3.3.2 等价优化--稀疏FA
+#### 3.3.2.1 8卡性能测试
+执行命令：
+```shell
+export ALGO=0
+export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
+export TASK_QUEUE_ENABLE=2
+export CPU_AFFINITY_CONF=1
+export TOKENIZERS_PARALLELISM=false
+
+torchrun --nproc_per_node=8 generate.py \
+--task i2v-A14B \
+--ckpt_dir ${model_base} \
+--size 1280*720 \
+--frame_num 81 \
+--sample_steps 40 \
+--dit_fsdp \
+--t5_fsdp \
+--cfg_size 1 \
+--ulysses_size 8 \
+--vae_parallel \
+--image examples/i2v_input.JPG \
+--prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
+--use_rainfusion \
+--sparsity 0.64 \
+--spasre_start_step 15 \
+--base_seed 0
+```
+
+参数说明：
+- use_rainfusion: 使能稀疏flash attention计算
+- sparsity: 稀疏度，值为[0, 1), 稀疏度越大，加速比越高，相应精度损失更大
+- spasre_start_step: 开始稀疏的时间步，通常需要保证不小于1/4的总时间步数
+
 
 ### 3.4 Wan2.2-TI2V-5B
 使用上一步下载的权重

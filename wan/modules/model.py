@@ -1,5 +1,6 @@
 # Copyright 2024-2025 The Alibaba Wan Team Authors. All rights reserved.
 import math
+import logging
 
 import torch
 import torch_npu
@@ -10,7 +11,7 @@ from diffusers.models.modeling_utils import ModelMixin
 from .attention import flash_attention, attention
 
 from mindiesd import rotary_position_embedding
-
+from wan.utils.rainfusion import Rainfusion
 __all__ = ['WanModel']
 
 
@@ -126,7 +127,7 @@ class WanSelfAttention(nn.Module):
         self.norm_q = WanRMSNorm(dim, eps=eps) if qk_norm else nn.Identity()
         self.norm_k = WanRMSNorm(dim, eps=eps) if qk_norm else nn.Identity()
 
-    def forward(self, x, seq_lens, grid_sizes, freqs, args=None):
+    def forward(self, x, seq_lens, grid_sizes, freqs, args=None, rainfusion_config=None, t_idx=None):
         r"""
         Args:
             x(Tensor): Shape [B, L, num_heads, C / num_heads]
@@ -150,7 +151,8 @@ class WanSelfAttention(nn.Module):
             k=rope_apply(k, grid_sizes, freqs),
             v=v,
             k_lens=seq_lens,
-            window_size=self.window_size)
+            window_size=self.window_size,
+            rainfusion_config=rainfusion_config)
 
         # output
         x = x.flatten(2)
@@ -234,6 +236,8 @@ class WanAttentionBlock(nn.Module):
         freqs,
         context,
         context_lens,
+        rainfusion_config,
+        t_idx,
     ):
         r"""
         Args:
@@ -254,7 +258,10 @@ class WanAttentionBlock(nn.Module):
                 seq_lens,
                 grid_sizes,
                 freqs,
-                self.args)
+                self.args,
+                rainfusion_config=rainfusion_config,
+                t_idx=t_idx
+        )
         with torch.amp.autocast('cuda', dtype=torch.bfloat16):
             x = x + y * e[2].squeeze(2)
 
@@ -421,6 +428,8 @@ class WanModel(ModelMixin, ConfigMixin):
 
         self.freqs_list = None
 
+        self.rainfusion_config = None
+
     def forward(
         self,
         x,
@@ -428,6 +437,7 @@ class WanModel(ModelMixin, ConfigMixin):
         context,
         seq_len,
         y=None,
+        t_idx=None,
     ):
         r"""
         Forward pass through the diffusion model
@@ -448,6 +458,14 @@ class WanModel(ModelMixin, ConfigMixin):
             List[Tensor]:
                 List of denoised video tensors with original input shapes [C_out, F, H / 8, W / 8]
         """
+        if self.rainfusion_config and self.rainfusion_config["atten_mask_all"] is None:
+            self.rainfusion_config["grid_size"] = Rainfusion.get_grid_size(x[0].shape, self.patch_size)
+            logging.info(f"Rainfusion grid size: {self.rainfusion_config['grid_size']}")
+            self.rainfusion_config["atten_mask_all"] = Rainfusion.get_atten_mask(
+                grid_size=self.rainfusion_config["grid_size"],
+                sparsity=self.rainfusion_config["sparsity"]
+            )
+        
         if self.model_type == 'i2v':
             assert y is not None
         # params
@@ -520,7 +538,10 @@ class WanModel(ModelMixin, ConfigMixin):
             grid_sizes=grid_sizes,
             freqs=self.freqs_list,
             context=context,
-            context_lens=context_lens)
+            context_lens=context_lens,
+            rainfusion_config=self.rainfusion_config,
+            t_idx=t_idx,
+        )
 
         for block in self.blocks:
             x = block(x, **kwargs)

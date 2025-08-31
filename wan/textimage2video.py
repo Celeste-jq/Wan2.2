@@ -374,7 +374,7 @@ class WanTI2V:
                 self.model.to(self.device)
                 torch.cuda.empty_cache()
 
-            for _, t in enumerate(tqdm(timesteps)):
+            for t_idx, t in enumerate(tqdm(timesteps)):
                 latent_model_input = latents
                 timestep = [t]
 
@@ -389,14 +389,14 @@ class WanTI2V:
 
                 if get_classifier_free_guidance_world_size() == 2:
                     noise_pred = self.model(
-                        latent_model_input, t=timestep, **arg_all)[0]
+                        latent_model_input, t=timestep, **arg_all, t_idx=t_idx)[0]
                     noise_pred_cond, noise_pred_uncond = get_cfg_group().all_gather(
                         noise_pred, separate_tensors=True)
                 else:
                     noise_pred_cond = self.model(
-                        latent_model_input, t=timestep, **arg_c)[0]
+                        latent_model_input, t=timestep, **arg_c, t_idx=t_idx)[0]
                     noise_pred_uncond = self.model(
-                        latent_model_input, t=timestep, **arg_null)[0]
+                        latent_model_input, t=timestep, **arg_null, t_idx=t_idx)[0]
                 noise_pred = noise_pred_uncond + guide_scale * (
                     noise_pred_cond - noise_pred_uncond)
 
@@ -584,7 +584,7 @@ class WanTI2V:
                 self.model.to(self.device)
                 torch.cuda.empty_cache()
 
-            for _, t in enumerate(tqdm(timesteps)):
+            for t_idx, t in enumerate(tqdm(timesteps)):
                 latent_model_input = [latent.to(self.device)]
                 timestep = [t]
 
@@ -599,7 +599,7 @@ class WanTI2V:
                 
                 if get_classifier_free_guidance_world_size() == 2:
                     noise_pred = self.model(
-                        latent_model_input, t=timestep, **arg_all)[0].to(
+                        latent_model_input, t=timestep, **arg_all, t_idx=t_idx)[0].to(
                             torch.device('cpu') if offload_model else self.device)
                     noise_pred_cond, noise_pred_uncond = get_cfg_group().all_gather(
                         noise_pred, separate_tensors=True)
@@ -607,11 +607,11 @@ class WanTI2V:
                         torch.cuda.empty_cache()
                 else:
                     noise_pred_cond = self.model(
-                        latent_model_input, t=timestep, **arg_c)[0]
+                        latent_model_input, t=timestep, **arg_c, t_idx=t_idx)[0]
                     if offload_model:
                         torch.cuda.empty_cache()
                     noise_pred_uncond = self.model(
-                        latent_model_input, t=timestep, **arg_null)[0]
+                        latent_model_input, t=timestep, **arg_null, t_idx=t_idx)[0]
                     if offload_model:
                         torch.cuda.empty_cache()
                 noise_pred = noise_pred_uncond + guide_scale * (
