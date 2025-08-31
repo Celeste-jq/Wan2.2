@@ -29,15 +29,19 @@ Atlas 800I/800T A2(8*64G)推理设备：支持的卡数最小为1
 # 增加软件包可执行权限，{version}表示软件版本号，{arch}表示CPU架构，{soc}表示昇腾AI处理器的版本。
 chmod +x ./Ascend-cann-toolkit_{version}_linux-{arch}.run
 chmod +x ./Ascend-cann-kernels-{soc}_{version}_linux.run
+chmod +x ./Ascend-cann-nnal_{version}_linux-{arch}.run  (若使用稀疏FA)
 # 校验软件包安装文件的一致性和完整性
 ./Ascend-cann-toolkit_{version}_linux-{arch}.run --check
 ./Ascend-cann-kernels-{soc}_{version}_linux.run --check
+./Ascend-cann-nnal{version}_linux-{arch}.run --check  (若使用稀疏FA)
 # 安装
 ./Ascend-cann-toolkit_{version}_linux-{arch}.run --install
 ./Ascend-cann-kernels-{soc}_{version}_linux.run --install
+./Ascend-cann-nnal{version}_linux-{arch}.run --torch_atb --install  (若使用稀疏FA)
 
 # 设置环境变量
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
+source /usr/local/Ascend/nnal/atb/set_env.sh
 ```
 
 ### 1.3 环境依赖安装
@@ -193,7 +197,6 @@ torchrun --nproc_per_node=8 --master_port=23459 generate.py \
 --sparsity 0.64 \
 --spasre_start_step 15 \
 --base_seed 0
-
 ```
 参数说明：
 - use_rainfusion: 使能稀疏flash attention计算
