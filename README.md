@@ -506,6 +506,7 @@ torchrun --nproc_per_node=16 --master_port=23459 generate.py \
 注： 
 1. 若出现OOM, 可添加环境变量 `export T5_LOAD_CPU=1`，以降低显存占用
 2. 当前仅TI2V支持attentioncache
+3. 若遇到报错: `Directory operation failed. Reason: Directory [/usr/local/Ascend/mindie/latest/mindie-rt/aoe] does not exist`,请设置环境变量`unset TUNE_BANK_PATH`
 
 
 ## 四、推理结果参考
