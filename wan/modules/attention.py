@@ -146,7 +146,8 @@ def attention(
     window_size=(-1, -1),
     deterministic=False,
     dtype=torch.bfloat16,
-    version=None
+    version=None,
+    rainfusion_config=None,
 ):
     if torch.npu.is_available():
         qtype = q.dtype
