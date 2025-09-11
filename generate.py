@@ -223,6 +223,23 @@ def _parse_args():
         action="store_true",
         default=False,
         help="Whether to convert model paramerters dtype.")
+    parser.add_argument(
+        "--quant_mode",
+        type=int,
+        default=0,
+        choices=[0, 1, 2, 3],
+        help="Quantization mode: " \
+        "0: Do not use quantized model for inference, " \
+        "1: Export calibration data, " \
+        "2: Export quantized model, " \
+        "3: Use quantized model for inference.")
+
+    parser.add_argument(
+        "--quant_data_dir",
+        type=str,
+        default="./output/quant_data",
+        help="Path for calibration data or weight export.")
+
     parser = add_attentioncache_args(parser)
     parser = add_rainfusion_args(parser)
     args = parser.parse_args()
@@ -395,7 +412,8 @@ def generate(args):
             use_sp=(args.ulysses_size > 1 or args.ring_size > 1),
             t5_cpu=args.t5_cpu,
             convert_model_dtype=args.convert_model_dtype,
-            use_vae_parallel=args.vae_parallel
+            use_vae_parallel=args.vae_parallel,
+            quant_mode=args.quant_mode
         )
 
         transformer_low = wan_t2v.low_noise_model
@@ -416,6 +434,10 @@ def generate(args):
             applicator.apply_to_model(transformer_high)
         # wan_t2v.low_noise_model.to("npu")
         # wan_t2v.high_noise_model.to("npu")
+
+        if args.quant_mode == 2:
+            logging.info(f"quantize weights saved, will be return")
+            return
 
         if args.use_attentioncache:
             config_high = CacheConfig(
@@ -496,7 +518,8 @@ def generate(args):
             use_sp=(args.ulysses_size > 1),
             t5_cpu=args.t5_cpu,
             convert_model_dtype=args.convert_model_dtype,
-            use_vae_parallel=args.vae_parallel
+            use_vae_parallel=args.vae_parallel,
+            quant_mode=args.quant_mode
         )
 
         transformer = wan_ti2v.model
@@ -512,6 +535,10 @@ def generate(args):
             applicator = TensorParallelApplicator(args.tp_size, device_map="cpu")
             applicator.apply_to_model(transformer)
         # wan_ti2v.model.to("npu")
+        
+        if args.quant_mode == 2:
+            logging.info(f"quantize weights saved, will be return")
+            return
         
         if args.use_attentioncache:
             config = CacheConfig(
@@ -582,7 +609,8 @@ def generate(args):
             use_sp=(args.ulysses_size > 1 or args.ring_size > 1),
             t5_cpu=args.t5_cpu,
             convert_model_dtype=args.convert_model_dtype,
-            use_vae_parallel=args.vae_parallel
+            use_vae_parallel=args.vae_parallel,
+            quant_mode=args.quant_mode
         )
         
         transformer_low = wan_i2v.low_noise_model
@@ -603,6 +631,10 @@ def generate(args):
             applicator.apply_to_model(transformer_high)
         # wan_i2v.low_noise_model.to("npu")
         # wan_i2v.high_noise_model.to("npu")
+
+        if args.quant_mode == 2:
+            logging.info(f"quantize weights saved, will be return")
+            return
 
         if args.use_attentioncache:
             config_low = CacheConfig(

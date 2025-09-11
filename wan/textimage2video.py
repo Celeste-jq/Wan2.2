@@ -37,6 +37,8 @@ from wan.distributed.parallel_mgr import (
 )
 from .vae_patch_parallel import VAE_patch_parallel, set_vae_patch_parallel
 
+from quant import quantize_weight
+from mindiesd import quantize
 
 class WanTI2V:
 
@@ -44,6 +46,7 @@ class WanTI2V:
         self,
         config,
         checkpoint_dir,
+        quant_data_dir, 
         device_id=0,
         rank=0,
         t5_fsdp=False,
@@ -53,6 +56,7 @@ class WanTI2V:
         init_on_cpu=True,
         convert_model_dtype=False,
         use_vae_parallel=False,
+        quant_mode=0
     ):
         r"""
         Initializes the Wan text-to-video generation model components.
@@ -117,6 +121,20 @@ class WanTI2V:
         logging.info(f"Creating WanModel from {checkpoint_dir}")
         self.model = WanModel.from_pretrained(checkpoint_dir)
         
+        if quant_mode == 2:
+            quant_data_dir = os.path.join(quant_data_dir, "ti2v_quant_weights_anti")
+            quantize_weight(self.model, quant_data_dir)
+            logging.info(f"quantize weights saved in {quant_data_dir}")
+            return
+        elif quant_mode == 3:
+            quant_data_dir = os.path.join(quant_data_dir, "ti2v_quant_weights_anti")
+            logging.info("use quant!")
+            torch.npu.config.allow_internal_format = True
+            quantize(self.model, os.path.join(quant_data_dir, "quant_model_description_w8a8_dynamic.json"),
+                  use_nz=False)
+            torch.npu.config.allow_internal_format = False
+            self.model = self.model.to(self.device)
+
         self.model = self._configure_model(
             model=self.model,
             use_sp=use_sp,

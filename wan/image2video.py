@@ -36,6 +36,8 @@ from wan.distributed.parallel_mgr import (
     get_cfg_group
 )
 
+from quant import quantize_weight
+from mindiesd import quantize
 
 class WanI2V:
 
@@ -43,6 +45,7 @@ class WanI2V:
         self,
         config,
         checkpoint_dir,
+        quant_data_dir,
         device_id=0,
         rank=0,
         t5_fsdp=False,
@@ -52,6 +55,7 @@ class WanI2V:
         init_on_cpu=True,
         convert_model_dtype=False,
         use_vae_parallel=False,
+        quant_mode=0,
     ):
         r"""
         Initializes the image-to-video generation model components.
@@ -114,9 +118,44 @@ class WanI2V:
                 all_pp_group_ranks.append(list(range(8 * i, 8 * (i + 1))))
             set_vae_patch_parallel(self.vae.model, 4, 2, all_pp_group_ranks= all_pp_group_ranks, decoder_decode="decoder.forward")
             set_vae_patch_parallel(self.vae.model, 4, 2, all_pp_group_ranks= all_pp_group_ranks, decoder_decode="encoder.forward")
-        logging.info(f"Creating WanModel from {checkpoint_dir}")
-        self.low_noise_model = WanModel.from_pretrained(
-            checkpoint_dir, subfolder=config.low_noise_checkpoint)
+        
+        if quant_mode == 2:
+            self.low_noise_model = WanModel.from_pretrained(
+                checkpoint_dir, subfolder=config.low_noise_checkpoint, torch_dtype=torch.bfloat16)
+
+            quant_data_dir_low = os.path.join(quant_data_dir, "i2v_quant_weights_anti_low")
+            quantize_weight(self.low_noise_model, quant_data_dir_low)
+            # self.low_noise_model = self.low_noise_model.to(self.device)
+            logging.info(f"quantize weights saved in {quant_data_dir_low}")
+
+            self.high_noise_model = WanModel.from_pretrained(
+                checkpoint_dir, subfolder=config.high_noise_checkpoint, torch_dtype=torch.bfloat16)
+
+            quant_data_dir_high = os.path.join(quant_data_dir, "i2v_quant_weights_anti_high")
+            quantize_weight(self.high_noise_model, quant_data_dir_high)
+            # self.high_noise_model = self.high_noise_model.to(self.device)
+            logging.info(f"quantize weights saved in {quant_data_dir_high}")
+
+            return
+
+        elif quant_mode == 3:
+            logging.info(f"Creating WanModel from {checkpoint_dir}")
+            self.low_noise_model = WanModel.from_pretrained(
+                checkpoint_dir, subfolder=config.low_noise_checkpoint)
+
+            quant_data_dir_low = os.path.join(quant_data_dir, "i2v_quant_weights_anti_low")
+            logging.info("use quant!")
+            torch.npu.config.allow_internal_format = True
+            quantize(self.low_noise_model, os.path.join(quant_data_dir_low, "quant_model_description_w8a8_dynamic.json"),
+                 use_nz=False)
+            torch.npu.config.allow_internal_format = False
+            self.low_noise_model = self.low_noise_model.to(self.device)
+        
+        else:
+            logging.info(f"Creating WanModel from {checkpoint_dir}")
+            self.low_noise_model = WanModel.from_pretrained(
+                checkpoint_dir, subfolder=config.low_noise_checkpoint)
+
         self.low_noise_model = self._configure_model(
             model=self.low_noise_model,
             use_sp=use_sp,
@@ -126,6 +165,15 @@ class WanI2V:
 
         self.high_noise_model = WanModel.from_pretrained(
             checkpoint_dir, subfolder=config.high_noise_checkpoint)
+        
+        if quant_mode == 3:
+            quant_data_dir_high = os.path.join(quant_data_dir, "i2v_quant_weights_anti_high")
+            torch.npu.config.allow_internal_format = True
+            quantize(self.high_noise_model, os.path.join(quant_data_dir_high, "quant_model_description_w8a8_dynamic.json"),
+                 use_nz=False)
+            torch.npu.config.allow_internal_format = False
+            self.high_noise_model = self.high_noise_model.to(self.device)
+
         self.high_noise_model = self._configure_model(
             model=self.high_noise_model,
             use_sp=use_sp,
