@@ -405,6 +405,7 @@ def generate(args):
         wan_t2v = wan.WanT2V(
             config=cfg,
             checkpoint_dir=args.ckpt_dir,
+            quant_data_dir=args.quant_data_dir,
             device_id=device,
             rank=rank,
             t5_fsdp=args.t5_fsdp,
@@ -511,6 +512,7 @@ def generate(args):
         wan_ti2v = wan.WanTI2V(
             config=cfg,
             checkpoint_dir=args.ckpt_dir,
+            quant_data_dir=args.quant_data_dir,
             device_id=device,
             rank=rank,
             t5_fsdp=args.t5_fsdp,
@@ -602,6 +604,7 @@ def generate(args):
         wan_i2v = wan.WanI2V(
             config=cfg,
             checkpoint_dir=args.ckpt_dir,
+            quant_data_dir=args.quant_data_dir,
             device_id=device,
             rank=rank,
             t5_fsdp=args.t5_fsdp,
