@@ -37,8 +37,6 @@ from wan.distributed.parallel_mgr import (
 )
 from .vae_patch_parallel import VAE_patch_parallel, set_vae_patch_parallel
 
-from quant import quantize_weight
-from mindiesd import quantize
 
 class WanTI2V:
 
@@ -122,11 +120,15 @@ class WanTI2V:
         self.model = WanModel.from_pretrained(checkpoint_dir)
         
         if quant_mode == 2:
+            from quant.quant import quantize_weight
+
             quant_data_dir = os.path.join(quant_data_dir, "ti2v_quant_weights_anti")
             quantize_weight(self.model, quant_data_dir)
             logging.info(f"quantize weights saved in {quant_data_dir}")
             return
         elif quant_mode == 3:
+            from mindiesd import quantize
+
             quant_data_dir = os.path.join(quant_data_dir, "ti2v_quant_weights_anti")
             logging.info("use quant!")
             torch.npu.config.allow_internal_format = True

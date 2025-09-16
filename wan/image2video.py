@@ -36,8 +36,6 @@ from wan.distributed.parallel_mgr import (
     get_cfg_group
 )
 
-from quant import quantize_weight
-from mindiesd import quantize
 
 class WanI2V:
 
@@ -120,6 +118,8 @@ class WanI2V:
             set_vae_patch_parallel(self.vae.model, 4, 2, all_pp_group_ranks= all_pp_group_ranks, decoder_decode="encoder.forward")
         
         if quant_mode == 2:
+            from quant.quant import quantize_weight
+            
             self.low_noise_model = WanModel.from_pretrained(
                 checkpoint_dir, subfolder=config.low_noise_checkpoint, torch_dtype=torch.bfloat16)
 
@@ -139,6 +139,8 @@ class WanI2V:
             return
 
         elif quant_mode == 3:
+            from mindiesd import quantize
+
             logging.info(f"Creating WanModel from {checkpoint_dir}")
             self.low_noise_model = WanModel.from_pretrained(
                 checkpoint_dir, subfolder=config.low_noise_checkpoint)
