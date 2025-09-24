@@ -109,9 +109,13 @@ class WanT2V:
             dtype=self.param_dtype)
         if use_vae_parallel:
             all_pp_group_ranks = []
-            for i in range(0, dist.get_world_size() // 8):
-                all_pp_group_ranks.append(list(range(8 * i, 8 * (i + 1))))
-            set_vae_patch_parallel(self.vae.model, 4, 2, all_pp_group_ranks= all_pp_group_ranks, decoder_decode="decoder.forward")
+            if dist.get_world_size() < 8 :
+                all_pp_group_ranks.append(list(range(0, dist.get_world_size())))
+                set_vae_patch_parallel(self.vae.model, dist.get_world_size(), 1, all_pp_group_ranks= all_pp_group_ranks, decoder_decode="decoder.forward")
+            else:
+                for i in range(0, dist.get_world_size() // 8):
+                    all_pp_group_ranks.append(list(range(8 * i, 8 * (i + 1))))
+                set_vae_patch_parallel(self.vae.model, 4, 2, all_pp_group_ranks= all_pp_group_ranks, decoder_decode="decoder.forward")
 
         if quant_mode == 2:
             from quant.quant import quantize_weight
