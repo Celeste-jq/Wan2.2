@@ -111,10 +111,13 @@ class WanTI2V:
             dtype=self.param_dtype)
         if use_vae_parallel:
             all_pp_group_ranks = []
-            for i in range(0, dist.get_world_size() // 8):
-                all_pp_group_ranks.append(list(range(8 * i, 8 * (i + 1))))
-            set_vae_patch_parallel(self.vae.model, 4, 2, all_pp_group_ranks= all_pp_group_ranks, decoder_decode="decoder.forward")
-            set_vae_patch_parallel(self.vae.model, 4, 2, all_pp_group_ranks= all_pp_group_ranks, decoder_decode="encoder.forward")
+            if dist.get_world_size() < 8 :
+                all_pp_group_ranks.append(list(range(0, dist.get_world_size())))
+                set_vae_patch_parallel(self.vae.model, dist.get_world_size(), 1, all_pp_group_ranks= all_pp_group_ranks, decoder_decode="decoder.forward")
+            else:
+                for i in range(0, dist.get_world_size() // 8):
+                    all_pp_group_ranks.append(list(range(8 * i, 8 * (i + 1))))
+                set_vae_patch_parallel(self.vae.model, 4, 2, all_pp_group_ranks= all_pp_group_ranks, decoder_decode="decoder.forward")
 
         logging.info(f"Creating WanModel from {checkpoint_dir}")
         self.model = WanModel.from_pretrained(checkpoint_dir)
@@ -554,8 +557,7 @@ class WanTI2V:
             context = [t.to(self.device) for t in context]
             context_null = [t.to(self.device) for t in context_null]
 
-        with VAE_patch_parallel():
-            z = self.vae.encode([img])
+        z = self.vae.encode([img])
 
         @contextmanager
         def noop_no_sync():
