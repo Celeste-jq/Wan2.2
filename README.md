@@ -780,5 +780,4 @@ torchrun --nproc_per_node=8 generate.py \
 5. 若循环跑纯模型推理，可能会因为HCCL端口未及时释放，导致因端口被占用而推理失败，报错：`Failed to bind the IP port. Reason: The IP address and port have been bound already.`
   `HCCL function error :HcclGetRootInfo(&hcclID), error code is 7`:  请配置`export HCCL_HOST_SOCKET_PORT_RANGE="auto"`不指定端口
   `HCCL function error :HcclGetRootInfo(&hcclID), error code is 11`: 请配置`sysctl -w net.ipv4.ip_local_reserved_ports=60000-60015`预留端口
-  
-   
+6. 当前版本A3设备上暂不支持ALGO=1，如需在A3上使用ALGO=1请联系模型owner
