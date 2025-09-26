@@ -74,6 +74,16 @@ tar -xzvf pytorch_v{pytorchversion}_py{pythonversion}.tar.gz
 pip install torch_npu-{pytorchversion}.xxxx.{arch}.whl
 ```
 
+### 1.6 gcc、g++安装
+# 若环境镜像中没有gcc、g++，请用户自行安装
+yum install gcc
+yum install g++
+
+# 导入头文件路径
+export CPLUS_INCLUDE_PATH=/usr/include/c++/12/:/usr/include/c++/12/aarch64-openEuler-linux/:$CPLUS_INCLUDE_PATH
+
+注：若使用openeuler镜像，需要配置gcc、g++环境，否则会导致`fatal error: 'stdio.h' file not found`
+
 ## 二、下载权重
 
 ### Wan2.2 权重及配置文件说明
@@ -505,12 +515,6 @@ torchrun --nproc_per_node=16 --master_port=23459 generate.py \
 ```
 
 
-注： 
-1. 若出现OOM, 可添加环境变量 `export T5_LOAD_CPU=1`，以降低显存占用
-2. 当前仅TI2V支持attentioncache
-3. 若遇到报错: `Directory operation failed. Reason: Directory [/usr/local/Ascend/mindie/latest/mindie-rt/aoe] does not exist`,请设置环境变量`unset TUNE_BANK_PATH`
-
-
 ## 四、量化功能支持
 本项目新增量化功能，支持权重 8 位（w8）与激活 8 位（a8）的量化组合，可减少模型显存占用并保持推理性能
 ### 4.1 安装量化工具msModelSlim
@@ -754,7 +758,7 @@ torchrun --nproc_per_node=8 generate.py \
 
 
 ## 五、推理结果参考
-###  Atlas 800I A2(8*64G) 64核(arm)性能数据
+###  Atlas 800I A2(8*64G) 64核(arm)性能数据 (ALGO=1)
 
 | 模型 | 分辨率 | 帧数 | 迭代次数 | 卡数 | E2E耗时|
 | :-----: | :-----: | :-----: | :-----: | :-----: | :-----: |
@@ -766,3 +770,14 @@ torchrun --nproc_per_node=8 generate.py \
 ## 声明
 - 本代码仓提到的数据集和模型仅作为示例，这些数据集和模型仅供您用于非商业目的，如您使用这些数据集和模型来完成示例，请您特别注意应遵守对应数据集和模型的License，如您因使用数据集或模型而产生侵权纠纷，华为不承担任何责任。
 - 如您在使用本代码仓的过程中，发现任何问题（包括但不限于功能问题、合规问题），请在本代码仓提交issue，我们将及时审视并解答。
+
+##六、常见问题
+1. 若出现OOM, 可添加环境变量 `export T5_LOAD_CPU=1`，以降低显存占用
+2. 当前仅TI2V支持attentioncache
+3. 若遇到报错: `Directory operation failed. Reason: Directory [/usr/local/Ascend/mindie/latest/mindie-rt/aoe] does not exist`,请设置环境变量`unset TUNE_BANK_PATH`
+4. 若使用openeuler镜像, 若没有配置gcc、g++环境，会遇到报错：`fatal error: 'stdio.h' file not found`，请参考1.6 gcc、g++安装
+5、若循环跑纯模型推理，可能会因为HCCL端口未及时释放，导致因端口被占用而推理失败，报错：`Failed to bind the IP port. Reason: The IP address and port have been bound already.`
+  `HCCL function error :HcclGetRootInfo(&hcclID), error code is 7`:  请配置`export HCCL_HOST_SOCKET_PORT_RANGE="auto"`不指定端口
+  `HCCL function error :HcclGetRootInfo(&hcclID), error code is 11`: 请配置`sysctl -w net.ipv4.ip_local_reserved_ports=60000-60015`预留端口
+  
+   
