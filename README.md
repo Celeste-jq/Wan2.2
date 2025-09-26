@@ -288,7 +288,7 @@ torchrun --nproc_per_node=16 --master_port=23459 generate.py \
 --base_seed 0
 ```
 
-#### 3.3.2 等价优化--稀疏FA
+#### 3.3.2 算法优化--稀疏FA
 #### 3.3.2.1 8卡性能测试
 执行命令：
 ```shell
