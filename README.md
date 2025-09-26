@@ -771,7 +771,7 @@ torchrun --nproc_per_node=8 generate.py \
 - 本代码仓提到的数据集和模型仅作为示例，这些数据集和模型仅供您用于非商业目的，如您使用这些数据集和模型来完成示例，请您特别注意应遵守对应数据集和模型的License，如您因使用数据集或模型而产生侵权纠纷，华为不承担任何责任。
 - 如您在使用本代码仓的过程中，发现任何问题（包括但不限于功能问题、合规问题），请在本代码仓提交issue，我们将及时审视并解答。
 
-##六、常见问题
+## 六、常见问题
 1. 若出现OOM, 可添加环境变量 `export T5_LOAD_CPU=1`，以降低显存占用
 2. 当前仅TI2V支持attentioncache
 3. 若遇到报错: `Directory operation failed. Reason: Directory [/usr/local/Ascend/mindie/latest/mindie-rt/aoe] does not exist`,请设置环境变量`unset TUNE_BANK_PATH`
