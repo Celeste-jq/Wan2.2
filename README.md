@@ -87,7 +87,7 @@ export CPLUS_INCLUDE_PATH=/usr/include/c++/12/:/usr/include/c++/12/aarch64-openE
 
 ## 二、下载权重
 
-### Wan2.2 权重及配置文件说明
+### 2.1 Wan2.2 权重及配置文件说明
 
 -  Huggingface
 
@@ -105,6 +105,14 @@ export CPLUS_INCLUDE_PATH=/usr/include/c++/12/:/usr/include/c++/12/aarch64-openE
 | Wan2.2-T2V-A14B  |  [	Modelers](https://modelers.cn/models/Modelers_Park/Wan2.2-T2V-A14B) | 
 | Wan2.2-I2V-A14B  |  [	Modelers](https://modelers.cn/models/Modelers_Park/Wan2.2-I2V-A14B ) |  
 | Wan2.2-TI2V-5B  |  [ Modelers](https://modelers.cn/models/Modelers_Park/Wan2.2-TI2V-5B) |  
+
+### 2.2 Wan2.2 支持分辨率说明
+
+|  模型 | 支持分辨率  |
+| ------------ | ------------ |
+| Wan2.2-T2V-A14B  | 720\*1280, 1280\*720, 480\*832, 832\*480  | 
+| Wan2.2-I2V-A14B  | 720\*1280, 1280\*720, 480\*832, 832\*480  |  
+| Wan2.2-TI2V-5B  | 704\*1280, 1280\*704  | 
 
 
 ## 三、Wan2.2使用
