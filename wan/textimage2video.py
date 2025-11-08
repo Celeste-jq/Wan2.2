@@ -366,7 +366,7 @@ class WanTI2V:
 
         # evaluation mode
         with (
-                torch.amp.autocast('cuda', dtype=self.param_dtype),
+                torch.amp.autocast('npu', dtype=self.param_dtype),
                 torch.no_grad(),
                 no_sync(),
         ):
@@ -567,7 +567,7 @@ class WanTI2V:
 
         # evaluation mode
         with (
-                torch.amp.autocast('cuda', dtype=self.param_dtype),
+                torch.amp.autocast('npu', dtype=self.param_dtype),
                 torch.no_grad(),
                 no_sync(),
         ):
