@@ -260,7 +260,7 @@ class WanT2V:
         if offload_model or self.init_on_cpu:
             if next(getattr(
                     self,
-                    offload_model_name).parameters()).device.type == 'cuda':
+                    offload_model_name).parameters()).device.type == 'npu':
                 getattr(self, offload_model_name).to('cpu')
             if next(getattr(
                     self,
@@ -366,7 +366,7 @@ class WanT2V:
 
         # evaluation mode
         with (
-                torch.amp.autocast('cuda', dtype=self.param_dtype),
+                torch.amp.autocast('npu', dtype=self.param_dtype),
                 torch.no_grad(),
                 no_sync_low_noise(),
                 no_sync_high_noise(),
