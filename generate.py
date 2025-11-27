@@ -75,6 +75,8 @@ def _validate_args(args):
 
     if args.frame_num is None:
         args.frame_num = cfg.frame_num
+    else:
+        assert (args.frame_num - 1) % 4 == 0, f"frame_num should be 4n+1, but get {args.frame_num}"
 
     args.base_seed = args.base_seed if args.base_seed >= 0 else random.randint(
         0, sys.maxsize)
