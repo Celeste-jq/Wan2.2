@@ -293,7 +293,7 @@ def generate(args):
     _init_logging(rank)
     stream = torch.npu.Stream()
     if args.cfg_size < 1 or args.ulysses_size < 1 or args.ring_size < 1 or args.tp_size < 1:
-        raise ValueError(f"cfg_size, ulysses_size, ring_size and tp_size must >= 1.")
+        raise ValueError(f"cfg_size, ulysses_size, ring_size and tp_size must >= 1, but current value is: cfg_size={args.cfg_size}, ulysses_size={args.ulysses_size}, ring_size={args.ring_size}, tp_size={args.tp_size}")
 
     if args.offload_model is None:
         args.offload_model = False if world_size > 1 else True
