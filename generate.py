@@ -284,6 +284,16 @@ def _init_logging(rank):
     else:
         logging.basicConfig(level=logging.ERROR)
 
+def check_para(args):
+    if args.cfg_size < 1 or args.ulysses_size < 1 or args.ring_size < 1 or args.tp_size < 1:
+        raise ValueError(f"cfg_size, ulysses_size, ring_size and tp_size must >= 1, but current value is: cfg_size={args.cfg_size}, ulysses_size={args.ulysses_size}, ring_size={args.ring_size}, tp_size={args.tp_size}")
+    if args.tp_size > 1:
+        raise NotImplementedError("Tensor Parallel is not supported now")
+    assert args.cfg_size in (1, 2), f"cfg_size must be 1 or 2, current value is {args.cfg_size}"
+
+    if "ti2v" not in args.task and args.use_attentioncache:
+        raise NotImplementedError(f"{args.task} unsupport attentioncache now")
+    
 
 def generate(args):
     rank = int(os.getenv("RANK", 0))
@@ -292,8 +302,8 @@ def generate(args):
     device = local_rank
     _init_logging(rank)
     stream = torch.npu.Stream()
-    if args.cfg_size < 1 or args.ulysses_size < 1 or args.ring_size < 1 or args.tp_size < 1:
-        raise ValueError(f"cfg_size, ulysses_size, ring_size and tp_size must >= 1, but current value is: cfg_size={args.cfg_size}, ulysses_size={args.ulysses_size}, ring_size={args.ring_size}, tp_size={args.tp_size}")
+    
+    check_para(args)
 
     if args.offload_model is None:
         args.offload_model = False if world_size > 1 else True
@@ -316,11 +326,6 @@ def generate(args):
         assert not (
             args.vae_parallel
         ), f"vae parallel are not supported in non-distributed environments."
-    
-    if args.tp_size > 1:
-        raise NotImplementedError("Tensor Parallel is not supported now")
-    if "ti2v" not in args.task and args.use_attentioncache:
-        raise NotImplementedError(f"{args.task} unsupport attentioncache now")
 
     if args.cfg_size > 1 or args.ulysses_size > 1 or args.ring_size > 1 or args.tp_size > 1:
         assert args.cfg_size * args.ulysses_size * args.ring_size * args.tp_size == world_size, f"The number of cfg_size, ulysses_size, ring_size and tp_size should be equal to the world size."
