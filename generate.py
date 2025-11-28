@@ -328,7 +328,7 @@ def generate(args):
         ), f"vae parallel are not supported in non-distributed environments."
 
     if args.cfg_size > 1 or args.ulysses_size > 1 or args.ring_size > 1 or args.tp_size > 1:
-        assert args.cfg_size * args.ulysses_size * args.ring_size * args.tp_size == world_size, f"The number of cfg_size, ulysses_size, ring_size and tp_size should be equal to the world size."
+        assert args.cfg_size * args.ulysses_size * args.ring_size * args.tp_size == world_size, f"number of NPUs should be equal to cfg_size * ulysses_size * ring_size * tp_size."
         sp_degree = args.ulysses_size * args.ring_size
         parallel_config = ParallelConfig(
             sp_degree=sp_degree,
