@@ -452,7 +452,7 @@ def generate(args):
         if args.use_attentioncache:
             config_high = CacheConfig(
                 method="attention_cache",
-                blocks_count=len(transformer_high.blocks),
+                blocks_count=len(transformer_high.blocks) * 2 // args.cfg_size,
                 steps_count=args.sample_steps,
                 step_start=args.start_step,
                 step_interval=args.attentioncache_interval,
@@ -461,12 +461,12 @@ def generate(args):
         else:
             config_high = CacheConfig(
                 method="attention_cache",
-                blocks_count=len(transformer_high.blocks),
+                blocks_count=len(transformer_high.blocks) * 2 // args.cfg_size,
                 steps_count=args.sample_steps
             )
         config_low = CacheConfig(
                 method="attention_cache",
-                blocks_count=len(transformer_low.blocks),
+                blocks_count=len(transformer_low.blocks) * 2 // args.cfg_size,
                 steps_count=args.sample_steps
             )
         cache_high = CacheAgent(config_high)
@@ -551,19 +551,9 @@ def generate(args):
             logging.info(f"quantize weights saved, will be return")
             return
         
-        if args.use_attentioncache:
-            config = CacheConfig(
+        config = CacheConfig(
                 method="attention_cache",
-                blocks_count=len(transformer.blocks),
-                steps_count=args.sample_steps,
-                step_start=args.start_step,
-                step_interval=args.attentioncache_interval,
-                step_end=args.end_step
-            )
-        else:
-            config = CacheConfig(
-                method="attention_cache",
-                blocks_count=len(transformer.blocks),
+                blocks_count=len(transformer.blocks) * 2 // args.cfg_size,
                 steps_count=args.sample_steps
             )
         cache = CacheAgent(config)
@@ -589,6 +579,25 @@ def generate(args):
             guide_scale=args.sample_guide_scale,
             seed=args.base_seed,
             offload_model=args.offload_model)
+        
+        if args.use_attentioncache:
+            config = CacheConfig(
+                method="attention_cache",
+                blocks_count=len(transformer.blocks) * 2 // args.cfg_size,
+                steps_count=args.sample_steps,
+                step_start=args.start_step,
+                step_interval=args.attentioncache_interval,
+                step_end=args.end_step
+            )
+            cache = CacheAgent(config)
+            if args.dit_fsdp:
+                for block in transformer._fsdp_wrapped_module.blocks:
+                    block._fsdp_wrapped_module.cache = cache
+                    block._fsdp_wrapped_module.args = args
+            else:
+                for block in transformer.blocks:
+                    block.cache = cache
+                    block.args = args
 
         logging.info(f"Generating video ...")
         stream.synchronize()
@@ -651,7 +660,7 @@ def generate(args):
         if args.use_attentioncache:
             config_low = CacheConfig(
                 method="attention_cache",
-                blocks_count=len(transformer_low.blocks),
+                blocks_count=len(transformer_low.blocks) * 2 // args.cfg_size,
                 steps_count=args.sample_steps,
                 step_start=args.start_step,
                 step_interval=args.attentioncache_interval,
@@ -660,12 +669,12 @@ def generate(args):
         else:
             config_low = CacheConfig(
                 method="attention_cache",
-                blocks_count=len(transformer_low.blocks),
+                blocks_count=len(transformer_low.blocks) * 2 // args.cfg_size,
                 steps_count=args.sample_steps
             )
         config_high = CacheConfig(
             method="attention_cache",
-            blocks_count=len(transformer_high.blocks),
+            blocks_count=len(transformer_high.blocks) * 2 // args.cfg_size,
             steps_count=args.sample_steps
         )
         cache_low = CacheAgent(config_low)
