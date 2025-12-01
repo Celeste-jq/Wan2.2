@@ -388,6 +388,7 @@ torchrun --nproc_per_node=8 generate.py \
 --t5_fsdp \
 --cfg_size 1 \
 --ulysses_size 8 \
+--vae_parallel \
 --image examples/i2v_input.JPG \
 --prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
 --base_seed 0
@@ -515,7 +516,6 @@ torchrun --nproc_per_node=16 --master_port=23459 generate.py \
 --vae_parallel \
 --image examples/i2v_input.JPG \
 --prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
---vae_parallel \
 --base_seed 0 \
 --use_attentioncache \
 --start_step 20 \
@@ -758,6 +758,7 @@ torchrun --nproc_per_node=8 generate.py \
   --ulysses_size 8 \
   --image examples/i2v_input.JPG \
   --prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
+  --vae_parallel \
   --base_seed 0 \
   --offload_model False \
   --dit_fsdp \
@@ -767,7 +768,7 @@ torchrun --nproc_per_node=8 generate.py \
 
 
 ## 五、推理结果参考
-###  Atlas 800I A2(8*64G) 64核(arm)性能数据 (ALGO=1)
+###  Atlas 800I A2(8*64G) 64核(arm) 浮点性能数据 (ALGO=1)
 
 | 模型 | 分辨率 | 帧数 | 迭代次数 | 卡数 | E2E耗时|
 | :-----: | :-----: | :-----: | :-----: | :-----: | :-----: |
