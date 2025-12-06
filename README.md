@@ -20,7 +20,6 @@ license: apache-2.0
 
 ### 1.1 获取CANN&MindIE安装包&环境准备
 - 设备支持
-Atlas 800I/800T A2(8*64G)推理设备：支持的卡数最小为1
 [Atlas 800I/800T A2(8*64G)](https://www.hiascend.com/developer/download/community/result?module=pt+ie+cann&product=4&model=32)
 - [环境准备指导](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/80RC2alpha002/softwareinst/instg/instg_0001.html)
 
@@ -145,8 +144,8 @@ torchrun --nproc_per_node=8 --master_port=23459 generate.py \
 --sample_steps 40 \
 --dit_fsdp \
 --t5_fsdp \
---cfg_size 1 \
---ulysses_size 8 \
+--cfg_size 2 \
+--ulysses_size 4 \
 --vae_parallel \
 --prompt "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." \
 --base_seed 0
@@ -208,8 +207,8 @@ torchrun --nproc_per_node=8 --master_port=23459 generate.py \
 --sample_steps 40 \
 --dit_fsdp \
 --t5_fsdp \
---cfg_size 1 \
---ulysses_size 8 \
+--cfg_size 2 \
+--ulysses_size 4 \
 --vae_parallel \
 --prompt "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." \
 --use_rainfusion \
@@ -248,8 +247,8 @@ torchrun --nproc_per_node=8 generate.py \
 --sample_steps 40 \
 --dit_fsdp \
 --t5_fsdp \
---cfg_size 1 \
---ulysses_size 8 \
+--cfg_size 2 \
+--ulysses_size 4 \
 --vae_parallel \
 --image examples/i2v_input.JPG \
 --prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
@@ -314,8 +313,8 @@ torchrun --nproc_per_node=8 generate.py \
 --sample_steps 40 \
 --dit_fsdp \
 --t5_fsdp \
---cfg_size 1 \
---ulysses_size 8 \
+--cfg_size 2 \
+--ulysses_size 4 \
 --vae_parallel \
 --image examples/i2v_input.JPG \
 --prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
@@ -355,6 +354,7 @@ python generate.py \
 --sample_steps 50 \
 --image examples/i2v_input.JPG \
 --prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
+--offload_model False \
 --base_seed 0 
 ```
 参数说明：
@@ -366,6 +366,7 @@ python generate.py \
 - sample_steps: 推理步数
 - image: 输入图片路径
 - prompt: 文本提示词
+- offload_model: 是否开启cpu offload，单卡默认开启
 - base_seed: 随机种子
 
 
@@ -386,8 +387,8 @@ torchrun --nproc_per_node=8 generate.py \
 --sample_steps 50 \
 --dit_fsdp \
 --t5_fsdp \
---cfg_size 1 \
---ulysses_size 8 \
+--cfg_size 2 \
+--ulysses_size 4 \
 --vae_parallel \
 --image examples/i2v_input.JPG \
 --prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
@@ -482,8 +483,8 @@ torchrun --nproc_per_node=8 generate.py \
 --sample_steps 50 \
 --dit_fsdp \
 --t5_fsdp \
---cfg_size 1 \
---ulysses_size 8 \
+--cfg_size 2 \
+--ulysses_size 4 \
 --image examples/i2v_input.JPG \
 --prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
 --vae_parallel \
@@ -525,250 +526,76 @@ torchrun --nproc_per_node=16 --master_port=23459 generate.py \
 
 
 ## 四、量化功能支持
-本项目新增量化功能，支持权重 8 位（w8）与激活 8 位（a8）的量化组合，可减少模型显存占用并保持推理性能
+新增Wan2.2-T2V、Wan2.2-I2V、Wan2.2-TI2V的W8A8_dynamic量化支持，针对DiT模型进行量化，降低现存占用，提高模型推理性能
 ### 4.1 安装量化工具msModelSlim
-参考[官方README](https://gitee.com/ascend/msit/tree/master/msmodelslim)
-1. git clone下载msit仓代码
-2. 进入到msit/msmodelslim的目录 cd msit/msmodelslim；并在进入的msmodelslim目录下，运行安装脚本 bash install.sh
+下载并安装msmodelslim工具
+```shell
+git clone https://gitcode.com/Ascend/msit
+cd msit/msmodelslim
+bash install.sh
+```
 
-### 4.2 量化模型生成
-要获取对量化模型的描述文件和权重文件，需在原有generate.py命令中添加`--quant_mode`参数（设置值为2），添加`--quant_data_dir`参数（指向量化描述文件和量化权重存放的文件夹路径），其余参数与原生模型推理一致。
+### 4.2 导出量化权重
+以Wan2.2-T2V-A14B模型为例，导出DiT的W8A8量化权重及描述文件
+```shell
+cd /path/to/Wan2.2
+model_base="./Wan2.2-T2V-A14B/"
 
-#### 4.2.1 量化参数说明
-| 参数 | 含义 | 可选值 | 默认值 |
-|------|------|--------|--------|
-| --quant_mode | 量化模式 | 0: 不使用量化模型推理  1: 导出校准数据， 2：导出量化模型， 3：使用量化模型推理. | 0 |
-| --quant_data_dir | 量化模型保存目录 | - | ./output/quant_data |
+python quant_wan22.py \
+--task t2v-A14B \
+--ckpt_dir ${model_base} \
+--quant_dit_path ./quant_w8a8_dynamic \
+--quant_type W8A8 \
+--is_dynamic
+```
+参数说明：
+- task: 生成任务类型，t2v-A14B、i2v-A14B、ti2v-5B
+- ckpt_dir: 浮点模型权重路径
+- quant_dit_path：导出量化DiT模型权重及描述文件的保存路径
+- quant_type：量化类型，当前仅支持W8A8
+- is_dynamic：使能动态量化
 
-#### 4.2.2 Wan2.2-T2V-A14B
-执行命令：
+执行后，`quant_w8a8_dynamic`目录下会生成两个文件夹：
+- `high_noise_model`
+  - `quant_model_description_w8a8_dynamic.json`：量化配置描述文件
+  - `quant_model_weight_w8a8_dynamic.safetensors`：量化后的权重文件
+- `low_noise_model`
+  - `quant_model_description_w8a8_dynamic.json`：量化配置描述文件
+  - `quant_model_weight_w8a8_dynamic.safetensors`：量化后的权重文件
 
+### 4.3 量化模型推理
+以Wan2.2-T2V-A14B模型为例，执行量化推理
 ```shell
 export ALGO=0
 export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
 export TASK_QUEUE_ENABLE=2
 export CPU_AFFINITY_CONF=1
 export TOKENIZERS_PARALLELISM=false
-export model_path="your local Wan2.2-T2V-A14B model path"
 
-export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+model_base="./Wan2.1-T2V-14B/"
+quant_dit_path="./quant_w8a8_dynamic/"
+
 torchrun --nproc_per_node=8 --master_port=23459 generate.py \
-  --task t2v-A14B \
-  --ckpt_dir ${model_path} \
-  --size 1280*720 \
-  --frame_num 81 \
-  --sample_steps 40 \
-  --t5_fsdp \
-  --cfg_size 1 \
-  --ulysses_size 8 \
-  --vae_parallel \
-  --prompt "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." \
-  --base_seed 0 \
-  --offload_model False \
-  --dit_fsdp \
-  --quant_mode 2 \
-  --quant_data_dir "./output/quant_data"
+--task t2v-A14B \
+--ckpt_dir ${model_base} \
+--quant_dit_path ${quant_dit_path} \
+--size 1280*720 \
+--frame_num 81 \
+--sample_steps 40 \
+--dit_fsdp \
+--t5_fsdp \
+--cfg_size 1 \
+--ulysses_size 8 \
+--vae_parallel \
+--prompt "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." \
+--base_seed 0
 ```
-
-#### 4.2.3 Wan2.2-I2V-A14B
-执行命令：
-
-```shell
-export ALGO=0
-export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
-export TASK_QUEUE_ENABLE=2
-export CPU_AFFINITY_CONF=1
-export TOKENIZERS_PARALLELISM=false
-export model_path="your local Wan2.2-I2V-A14B model path"
-
-export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
-torchrun --nproc_per_node=8 --master_port=23459 generate.py \
-  --task i2v-A14B \
-  --ckpt_dir ${model_path} \
-  --size 1280*720 \
-  --frame_num 81 \
-  --sample_steps 40 \
-  --t5_fsdp \
-  --cfg_size 1 \
-  --ulysses_size 8 \
-  --vae_parallel \
-  --image examples/i2v_input.JPG \
-  --prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
-  --base_seed 0 \
-  --offload_model False \
-  --dit_fsdp \
-  --quant_mode 2 \
-  --quant_data_dir "./output/quant_data"
-```
-
-#### 4.2.4 Wan2.2-TI2V-5B
-执行命令：
-
-```shell
-export ALGO=0
-export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
-export TASK_QUEUE_ENABLE=2
-export CPU_AFFINITY_CONF=1
-export TOKENIZERS_PARALLELISM=false
-export model_path="your local Wan2.2-TI2V-5B model path"
-
-export ASCEND_RT_VISIBLE_DEVICES=2 # 设置为2卡
-python generate.py \
-  --task ti2v-5B \
-  --ckpt_dir ${model_path} \
-  --size 1280*704 \
-  --frame_num 121 \
-  --sample_steps 50 \
-  --image examples/i2v_input.JPG \
-  --prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
-  --base_seed 0 \
-  --use_attentioncache \
-  --start_step 20 \
-  --attentioncache_interval 2 \
-  --end_step 47 \
-  --quant_mode 2 \
-  --quant_data_dir "./output/quant_data"
-```
-
-### 4.3 安装量化模型推理工具NNAL神经网络加速库和torch_atb
-#### 4.3.1 获取安装包
-- 支持设备：[Atlas 800I A2](https://www.hiascend.com/developer/download/community/result?module=pt+ie+cann&product=4&model=32)
-- [环境准备指导](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/81RC1alpha001/softwareinst/instg/instg_0003.html)
-
-#### 4.3.2 安装
-```shell
-# 增加软件包可执行权限，{version}表示软件版本号，{arch}表示CPU架构。
-chmod +x Ascend-cann-nnal_<version>_linux-<arch>.run
-# 默认路径安装:
-./Ascend-cann-nnal_<version>_linux-<arch>.run --install --torch_atb
-# 配置环境变量:
-source ${HOME}/Ascend/nnal/atb/set_env.sh
-```
-
-### 4.4 使用量化模型推理
-使用量化模型进行推理时，需在原有generate.py命令中添加`--quant_mode`参数（设置值为3），添加`--quant_data_dir`参数（指向量化描述文件和量化权重存放的文件夹路径），其余参数与原生模型推理一致。
-#### 4.4.1 Wan2.2-T2V-A14B
-执行命令：（以等价优化 8卡 为例）
-
-```shell
-export ALGO=0
-export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
-export TASK_QUEUE_ENABLE=2
-export CPU_AFFINITY_CONF=1
-export TOKENIZERS_PARALLELISM=false
-export model_path="your local Wan2.2-T2V-A14B model path"
-
-export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
-torchrun --nproc_per_node=8 --master_port=23459 generate.py \
-  --task t2v-A14B \
-  --ckpt_dir ${model_path} \
-  --size 1280*720 \
-  --frame_num 81 \
-  --sample_steps 40 \
-  --t5_fsdp \
-  --cfg_size 1 \
-  --ulysses_size 8 \
-  --vae_parallel \
-  --prompt "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." \
-  --base_seed 0 \
-  --offload_model False \
-  --dit_fsdp \
-  --quant_mode 3 \
-  --quant_data_dir "./output/quant_data"
-```
-
-#### 4.4.2 Wan2.2-I2V-A14B
-执行命令：（以等价优化 8卡 为例）
-```shell
-export ALGO=0
-export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
-export TASK_QUEUE_ENABLE=2
-export CPU_AFFINITY_CONF=1
-export TOKENIZERS_PARALLELISM=false
-export model_path="your local Wan2.2-I2V-A14B model path"
-
-export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
-torchrun --nproc_per_node=8 --master_port=23459 generate.py \
-  --task i2v-A14B \
-  --ckpt_dir ${model_path} \
-  --size 1280*720 \
-  --frame_num 81 \
-  --sample_steps 40 \
-  --t5_fsdp \
-  --cfg_size 1 \
-  --ulysses_size 8 \
-  --vae_parallel \
-  --image examples/i2v_input.JPG \
-  --prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
-  --base_seed 0 \
-  --offload_model False \
-  --dit_fsdp \
-  --quant_mode 3 \
-  --quant_data_dir "./output/quant_data"
-```
-
-#### 4.4.3 Wan2.2-TI2V-5B
-##### 4.4.3.1 等价优化 单卡
-执行命令：
-```shell
-export ALGO=0
-export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
-export TASK_QUEUE_ENABLE=2
-export CPU_AFFINITY_CONF=1
-export TOKENIZERS_PARALLELISM=false
-export model_path="your local Wan2.2-TI2V-5B model path"
-
-export ASCEND_RT_VISIBLE_DEVICES=2
-python generate.py \
-  --task ti2v-5B \
-  --ckpt_dir ${model_path} \
-  --size 1280*704 \
-  --frame_num 121 \
-  --sample_steps 50 \
-  --image examples/i2v_input.JPG \
-  --prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
-  --base_seed 0 \
-  --use_attentioncache \
-  --start_step 20 \
-  --attentioncache_interval 2 \
-  --end_step 47 \
-  --quant_mode 3 \
-  --quant_data_dir "./output/quant_data"
-```
-
-##### 4.4.3.2 等价优化 8卡
-执行命令：
-```shell
-export ALGO=0
-export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
-export TASK_QUEUE_ENABLE=2
-export CPU_AFFINITY_CONF=1
-export TOKENIZERS_PARALLELISM=false
-export model_path="your local Wan2.2-TI2V-5B model path"
-
-export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
-torchrun --nproc_per_node=8 generate.py \
-  --task ti2v-5B \
-  --ckpt_dir ${model_path} \
-  --size 1280*704 \
-  --frame_num 121 \
-  --sample_steps 50 \
-  --t5_fsdp \
-  --cfg_size 1 \
-  --ulysses_size 8 \
-  --image examples/i2v_input.JPG \
-  --prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
-  --vae_parallel \
-  --base_seed 0 \
-  --offload_model False \
-  --dit_fsdp \
-  --quant_mode 3 \
-  --quant_data_dir "./output/quant_data"
-```
+参数说明：
+- quant_dit_path：量化DiT模型权重的路径，传入该参数则使能量化
 
 
 ## 五、推理结果参考
-###  Atlas 800I A2(8*64G) 64核(arm) 浮点性能数据 (ALGO=1)
+###  Atlas 800I A2(8*64G) 64核(arm)性能数据 (ALGO=1)
 
 | 模型 | 分辨率 | 帧数 | 迭代次数 | 卡数 | E2E耗时|
 | :-----: | :-----: | :-----: | :-----: | :-----: | :-----: |
@@ -789,4 +616,4 @@ torchrun --nproc_per_node=8 generate.py \
 5. 若循环跑纯模型推理，可能会因为HCCL端口未及时释放，导致因端口被占用而推理失败，报错：`Failed to bind the IP port. Reason: The IP address and port have been bound already.`
   `HCCL function error :HcclGetRootInfo(&hcclID), error code is 7`:  请配置`export HCCL_HOST_SOCKET_PORT_RANGE="auto"`不指定端口
   `HCCL function error :HcclGetRootInfo(&hcclID), error code is 11`: 请配置`sysctl -w net.ipv4.ip_local_reserved_ports=60000-60015`预留端口
-6. 当前版本A3设备上暂不支持ALGO=1，如需在A3上使用ALGO=1请联系模型owner
+6. 当前版本A3设备上暂不原生支持ALGO=1, 即将支持，敬请期待

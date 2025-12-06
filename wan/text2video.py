@@ -41,7 +41,6 @@ class WanT2V:
         self,
         config,
         checkpoint_dir,
-        quant_data_dir,
         device_id=0,
         rank=0,
         t5_fsdp=False,
@@ -51,7 +50,7 @@ class WanT2V:
         init_on_cpu=True,
         convert_model_dtype=False,
         use_vae_parallel=False,
-        quant_mode=0
+        quant_dit_path=None,
     ):
         r"""
         Initializes the Wan text-to-video generation model components.
@@ -117,47 +116,23 @@ class WanT2V:
                     all_pp_group_ranks.append(list(range(8 * i, 8 * (i + 1))))
                 set_vae_patch_parallel(self.vae.model, 4, 2, all_pp_group_ranks= all_pp_group_ranks, decoder_decode="decoder.forward")
 
-        if quant_mode == 2:
-            from quant.quant import quantize_weight
-
-            self.low_noise_model = WanModel.from_pretrained(
-                checkpoint_dir, subfolder=config.low_noise_checkpoint, torch_dtype=torch.bfloat16)
-
-            quant_data_dir_low = os.path.join(quant_data_dir, "t2v_quant_weights_anti_low")
-            quantize_weight(self.low_noise_model, quant_data_dir_low)
-            # self.low_noise_model = self.low_noise_model.to(self.device)
-            logging.info(f"quantize weights saved in {quant_data_dir_low}")
-
-            self.high_noise_model = WanModel.from_pretrained(
-                checkpoint_dir, subfolder=config.high_noise_checkpoint, torch_dtype=torch.bfloat16)
-
-            quant_data_dir_high = os.path.join(quant_data_dir, "t2v_quant_weights_anti_high")
-            quantize_weight(self.high_noise_model, quant_data_dir_high)
-            # self.high_noise_model = self.high_noise_model.to(self.device)
-            logging.info(f"quantize weights saved in {quant_data_dir_high}")
-
-            return
-
-        elif quant_mode == 3:
+        logging.info(f"Creating WanModel from {checkpoint_dir}")
+        self.low_noise_model = WanModel.from_pretrained(
+            checkpoint_dir, subfolder=config.low_noise_checkpoint, torch_dtype=self.param_dtype)
+        if quant_dit_path:
+            quant_dit_path = os.path.abspath(quant_dit_path)
+            quant_low_noise_path = os.path.join(quant_dit_path, config.low_noise_checkpoint)
+            quant_low_noise_desc_path = os.path.join(quant_low_noise_path, "quant_model_description_w8a8_dynamic.json")
+            if not os.path.exists(quant_low_noise_desc_path):
+                raise FileNotFoundError(f"Quantization description file not found: {quant_low_noise_desc_path}")
+            logging.info(f"Enabled quant, trying to load quantized low noise DiT model from {quant_low_noise_path}...")
             from mindiesd import quantize
-            
-            logging.info(f"Creating WanModel from {checkpoint_dir}")
-            self.low_noise_model = WanModel.from_pretrained(
-                checkpoint_dir, subfolder=config.low_noise_checkpoint)
-
-            quant_data_dir_low = os.path.join(quant_data_dir, "t2v_quant_weights_anti_low")
-            logging.info("use quant!")
-            torch.npu.config.allow_internal_format = True
-            quantize(self.low_noise_model, os.path.join(quant_data_dir_low, "quant_model_description_w8a8_dynamic.json"),
-                 use_nz=False)
-            torch.npu.config.allow_internal_format = False
-            self.low_noise_model = self.low_noise_model.to(self.device)
-        
-        else:
-            logging.info(f"Creating WanModel from {checkpoint_dir}")
-            self.low_noise_model = WanModel.from_pretrained(
-                checkpoint_dir, subfolder=config.low_noise_checkpoint)
-        
+            quantize(
+                model=self.low_noise_model,
+                quant_des_path=quant_low_noise_desc_path,
+                use_nz=True
+            )
+            logging.info("Load quantized low noise DiT model successfully")
 
         self.low_noise_model = self._configure_model(
             model=self.low_noise_model,
@@ -167,15 +142,21 @@ class WanT2V:
             convert_model_dtype=convert_model_dtype)
 
         self.high_noise_model = WanModel.from_pretrained(
-            checkpoint_dir, subfolder=config.high_noise_checkpoint)
-        
-        if quant_mode == 3:
-            quant_data_dir_high = os.path.join(quant_data_dir, "t2v_quant_weights_anti_high")
-            torch.npu.config.allow_internal_format = True
-            quantize(self.high_noise_model, os.path.join(quant_data_dir_high, "quant_model_description_w8a8_dynamic.json"),
-                 use_nz=False)
-            torch.npu.config.allow_internal_format = False
-            self.high_noise_model = self.high_noise_model.to(self.device)
+            checkpoint_dir, subfolder=config.high_noise_checkpoint, torch_dtype=self.param_dtype)
+        if quant_dit_path:
+            quant_dit_path = os.path.abspath(quant_dit_path)
+            quant_high_noise_path = os.path.join(quant_dit_path, config.high_noise_checkpoint)
+            quant_high_noise_desc_path = os.path.join(quant_high_noise_path, "quant_model_description_w8a8_dynamic.json")
+            if not os.path.exists(quant_high_noise_desc_path):
+                raise FileNotFoundError(f"Quantization description file not found: {quant_high_noise_desc_path}")
+            logging.info(f"Enabled quant, trying to load quantized high noise DiT model from {quant_high_noise_path}...")
+            from mindiesd import quantize
+            quantize(
+                model=self.high_noise_model,
+                quant_des_path=quant_high_noise_desc_path,
+                use_nz=True
+            )
+            logging.info("Load quantized high noise DiT model successfully")
 
         self.high_noise_model = self._configure_model(
             model=self.high_noise_model,
@@ -183,6 +164,7 @@ class WanT2V:
             dit_fsdp=dit_fsdp,
             shard_fn=shard_fn,
             convert_model_dtype=convert_model_dtype)
+        
         if use_sp:
             self.sp_size = get_sequence_parallel_world_size()
         else:
@@ -229,8 +211,8 @@ class WanT2V:
         else:
             if convert_model_dtype:
                 model.to(self.param_dtype)
-            if not self.init_on_cpu:
-                model.to(self.device)
+            # if not self.init_on_cpu:
+            #     model.to(self.device)
 
         return model
 
@@ -329,7 +311,7 @@ class WanT2V:
         if n_prompt == "":
             n_prompt = self.sample_neg_prompt
         seed = seed if seed >= 0 else random.randint(0, sys.maxsize)
-        seed_g = torch.Generator(device=self.device)
+        seed_g = torch.Generator(device=torch.device("cpu") if int(os.getenv('PRECISION', 0)) else self.device)
         seed_g.manual_seed(seed)
 
         if not self.t5_cpu:
@@ -351,8 +333,8 @@ class WanT2V:
                 target_shape[2],
                 target_shape[3],
                 dtype=torch.float32,
-                device=self.device,
-                generator=seed_g)
+                device=torch.device("cpu") if int(os.getenv('PRECISION', 0)) else self.device,
+                generator=seed_g).to(self.device)
         ]
 
         @contextmanager

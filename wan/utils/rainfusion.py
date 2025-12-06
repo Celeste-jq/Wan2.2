@@ -247,7 +247,7 @@ class Rainfusion(torch.nn.Module):
             [value[:, self.num_tokens_per_frame:, :, :], value[:, :self.num_tokens_per_frame, :, :]], 
             dim=1)
 
-        if self.use_rainfusion and t_idx > self.skip_timesteps:
+        if self.use_rainfusion and t_idx >= self.skip_timesteps:
             atten_mask = atten_mask_all[0]
             global_step = self.num_frames - 1
             seq_len = self.num_tokens_per_frame
@@ -268,7 +268,7 @@ class Rainfusion(torch.nn.Module):
                 global_step=global_step
             )
 
-        if self.use_la or (self.use_rainfusion and t_idx > self.skip_timesteps):
+        if self.use_la or (self.use_rainfusion and t_idx >= self.skip_timesteps):
             query_layer_list = query_layer.split(1, dim=2)
             key_layer_list = key_layer.split(1, dim=2)
             value_layer_list = value_layer.split(1, dim=2)
@@ -279,7 +279,7 @@ class Rainfusion(torch.nn.Module):
         
         output = []
         for i in range(for_loop):
-            if self.use_rainfusion and t_idx > self.skip_timesteps:
+            if self.use_rainfusion and t_idx >= self.skip_timesteps:
                 use_local = False
                 ratio_local, ratio_global = ratio_list[i], ratio_list_2[i]
                 if ratio_local > WIN_RATIO or ratio_local > ratio_global:

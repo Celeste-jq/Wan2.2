@@ -28,7 +28,7 @@ def sinusoidal_embedding_1d(dim, position):
     return x
 
 
-@torch.amp.autocast('cuda', enabled=False)
+@torch.amp.autocast('npu', enabled=False)
 def rope_params(max_seq_len, dim, theta=10000):
     assert dim % 2 == 0
     freqs = torch.outer(
@@ -39,16 +39,10 @@ def rope_params(max_seq_len, dim, theta=10000):
     return freqs
 
 
-@torch.amp.autocast('cuda', enabled=False)
+@torch.amp.autocast('npu', enabled=False)
 def rope_apply(x, grid_sizes, freqs_list):
-    s, n, c = x.size(1), x.size(2), x.size(3)
-    output = []
-    for i, (f, h, w) in enumerate(grid_sizes.tolist()):
-        x_i = x[i, :s].reshape(1, s, n, c)
-        cos, sin = freqs_list[i]
-        x_i = rotary_position_embedding(x_i, cos, sin, rotated_mode="rotated_interleaved", fused=True)
-        output.append(x_i)
-    return torch.cat(output).float()
+    cos, sin = freqs_list[0]
+    return rotary_position_embedding(x, cos, sin, rotated_mode="rotated_interleaved", fused=True)
 
 
 class WanRMSNorm(nn.Module):
@@ -152,7 +146,9 @@ class WanSelfAttention(nn.Module):
             v=v,
             k_lens=seq_lens,
             window_size=self.window_size,
-            rainfusion_config=rainfusion_config)
+            rainfusion_config=rainfusion_config,
+            t_idx=t_idx,
+        )
 
         # output
         x = x.flatten(2)

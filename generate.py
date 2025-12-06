@@ -66,12 +66,18 @@ def _validate_args(args):
 
     if args.sample_steps is None:
         args.sample_steps = cfg.sample_steps
+    else:
+        assert args.sample_steps >= 1 , f"sample_steps should be >= 1, but get {args.sample_steps}"
 
     if args.sample_shift is None:
         args.sample_shift = cfg.sample_shift
+    else:
+        assert args.sample_shift > 0.0 , f"sample_shift should be > 0, but get {args.sample_shift}"
 
     if args.sample_guide_scale is None:
         args.sample_guide_scale = cfg.sample_guide_scale
+    else:
+        assert args.sample_guide_scale > 0.0 , f"sample_guide_scale should be > 0, but get {args.sample_guide_scale}"
 
     if args.frame_num is None:
         args.frame_num = cfg.frame_num
@@ -80,10 +86,20 @@ def _validate_args(args):
 
     args.base_seed = args.base_seed if args.base_seed >= 0 else random.randint(
         0, sys.maxsize)
+    
     # Size check
-    assert args.size in SUPPORTED_SIZES[
-        args.
-        task], f"Unsupport size {args.size} for task {args.task}, supported sizes are: {', '.join(SUPPORTED_SIZES[args.task])}"
+    assert args.size in SUPPORTED_SIZES[args.task], \
+        f"Unsupport size {args.size} for task {args.task}, supported sizes are: {', '.join(SUPPORTED_SIZES[args.task])}"
+    
+    if args.cfg_size < 1 or args.ulysses_size < 1 or args.ring_size < 1 or args.tp_size < 1:
+        raise ValueError(f"cfg_size, ulysses_size, ring_size and tp_size must >= 1, \
+                         but get cfg_size={args.cfg_size}, ulysses_size={args.ulysses_size}, ring_size={args.ring_size}, tp_size={args.tp_size}")
+
+    if args.tp_size > 1:
+        raise NotImplementedError("Tensor Parallel is not supported now")
+    
+    if "ti2v" not in args.task and args.use_attentioncache:
+        raise NotImplementedError(f"{args.task} unsupport attentioncache now")
 
 
 def _parse_args():
@@ -226,21 +242,9 @@ def _parse_args():
         default=False,
         help="Whether to convert model paramerters dtype.")
     parser.add_argument(
-        "--quant_mode",
-        type=int,
-        default=0,
-        choices=[0, 1, 2, 3],
-        help="Quantization mode: " \
-        "0: Do not use quantized model for inference, " \
-        "1: Export calibration data, " \
-        "2: Export quantized model, " \
-        "3: Use quantized model for inference.")
-
-    parser.add_argument(
-        "--quant_data_dir",
+        "--quant_dit_path",
         type=str,
-        default="./output/quant_data",
-        help="Path for calibration data or weight export.")
+        help="Path to quantize dit model path, enable quantization if provided")
 
     parser = add_attentioncache_args(parser)
     parser = add_rainfusion_args(parser)
@@ -284,16 +288,6 @@ def _init_logging(rank):
     else:
         logging.basicConfig(level=logging.ERROR)
 
-def check_para(args):
-    if args.cfg_size < 1 or args.ulysses_size < 1 or args.ring_size < 1 or args.tp_size < 1:
-        raise ValueError(f"cfg_size, ulysses_size, ring_size and tp_size must >= 1, but current value is: cfg_size={args.cfg_size}, ulysses_size={args.ulysses_size}, ring_size={args.ring_size}, tp_size={args.tp_size}")
-    if args.tp_size > 1:
-        raise NotImplementedError("Tensor Parallel is not supported now")
-    assert args.cfg_size in (1, 2), f"cfg_size must be 1 or 2, current value is {args.cfg_size}"
-
-    if "ti2v" not in args.task and args.use_attentioncache:
-        raise NotImplementedError(f"{args.task} unsupport attentioncache now")
-    
 
 def generate(args):
     rank = int(os.getenv("RANK", 0))
@@ -302,8 +296,6 @@ def generate(args):
     device = local_rank
     _init_logging(rank)
     stream = torch.npu.Stream()
-    
-    check_para(args)
 
     if args.offload_model is None:
         args.offload_model = False if world_size > 1 else True
@@ -328,7 +320,8 @@ def generate(args):
         ), f"vae parallel are not supported in non-distributed environments."
 
     if args.cfg_size > 1 or args.ulysses_size > 1 or args.ring_size > 1 or args.tp_size > 1:
-        assert args.cfg_size * args.ulysses_size * args.ring_size * args.tp_size == world_size, f"number of NPUs should be equal to cfg_size * ulysses_size * ring_size * tp_size."
+        assert args.cfg_size * args.ulysses_size * args.ring_size * args.tp_size == world_size, \
+            f"cfg_size {args.cfg_size} * ulysses_size {args.ulysses_size} * ring_size {args.ring_size } * tp_size {args.tp_size} should be equal to the world size {world_size}."
         sp_degree = args.ulysses_size * args.ring_size
         parallel_config = ParallelConfig(
             sp_degree=sp_degree,
@@ -414,7 +407,6 @@ def generate(args):
         wan_t2v = wan.WanT2V(
             config=cfg,
             checkpoint_dir=args.ckpt_dir,
-            quant_data_dir=args.quant_data_dir,
             device_id=device,
             rank=rank,
             t5_fsdp=args.t5_fsdp,
@@ -423,7 +415,7 @@ def generate(args):
             t5_cpu=args.t5_cpu,
             convert_model_dtype=args.convert_model_dtype,
             use_vae_parallel=args.vae_parallel,
-            quant_mode=args.quant_mode
+            quant_dit_path=args.quant_dit_path
         )
 
         transformer_low = wan_t2v.low_noise_model
@@ -442,12 +434,8 @@ def generate(args):
             applicator = TensorParallelApplicator(args.tp_size, device_map="cpu")
             applicator.apply_to_model(transformer_low)
             applicator.apply_to_model(transformer_high)
-        # wan_t2v.low_noise_model.to("npu")
-        # wan_t2v.high_noise_model.to("npu")
-
-        if args.quant_mode == 2:
-            logging.info(f"quantize weights saved, will be return")
-            return
+        wan_t2v.low_noise_model.to("npu")
+        wan_t2v.high_noise_model.to("npu")
 
         if args.use_attentioncache:
             config_high = CacheConfig(
@@ -521,7 +509,6 @@ def generate(args):
         wan_ti2v = wan.WanTI2V(
             config=cfg,
             checkpoint_dir=args.ckpt_dir,
-            quant_data_dir=args.quant_data_dir,
             device_id=device,
             rank=rank,
             t5_fsdp=args.t5_fsdp,
@@ -530,7 +517,7 @@ def generate(args):
             t5_cpu=args.t5_cpu,
             convert_model_dtype=args.convert_model_dtype,
             use_vae_parallel=args.vae_parallel,
-            quant_mode=args.quant_mode
+            quant_dit_path=args.quant_dit_path
         )
 
         transformer = wan_ti2v.model
@@ -545,12 +532,8 @@ def generate(args):
             logging.info("Initializing Tensor Parallel ...")
             applicator = TensorParallelApplicator(args.tp_size, device_map="cpu")
             applicator.apply_to_model(transformer)
-        # wan_ti2v.model.to("npu")
-        
-        if args.quant_mode == 2:
-            logging.info(f"quantize weights saved, will be return")
-            return
-        
+        wan_ti2v.model.to("npu")
+
         config = CacheConfig(
                 method="attention_cache",
                 blocks_count=len(transformer.blocks) * 2 // args.cfg_size,
@@ -622,7 +605,6 @@ def generate(args):
         wan_i2v = wan.WanI2V(
             config=cfg,
             checkpoint_dir=args.ckpt_dir,
-            quant_data_dir=args.quant_data_dir,
             device_id=device,
             rank=rank,
             t5_fsdp=args.t5_fsdp,
@@ -631,7 +613,7 @@ def generate(args):
             t5_cpu=args.t5_cpu,
             convert_model_dtype=args.convert_model_dtype,
             use_vae_parallel=args.vae_parallel,
-            quant_mode=args.quant_mode
+            quant_dit_path=args.quant_dit_path
         )
         
         transformer_low = wan_i2v.low_noise_model
@@ -650,12 +632,8 @@ def generate(args):
             applicator = TensorParallelApplicator(args.tp_size, device_map="cpu")
             applicator.apply_to_model(transformer_low)
             applicator.apply_to_model(transformer_high)
-        # wan_i2v.low_noise_model.to("npu")
-        # wan_i2v.high_noise_model.to("npu")
-
-        if args.quant_mode == 2:
-            logging.info(f"quantize weights saved, will be return")
-            return
+        wan_i2v.low_noise_model.to("npu")
+        wan_i2v.high_noise_model.to("npu")
 
         if args.use_attentioncache:
             config_low = CacheConfig(

@@ -22,6 +22,7 @@ __all__ = [
 ]
 
 from mindiesd import attention_forward
+from wan.utils.rainfusion import Rainfusion
 
 
 def flash_attention(
@@ -148,13 +149,26 @@ def attention(
     dtype=torch.bfloat16,
     version=None,
     rainfusion_config=None,
+    t_idx=None
 ):
     if torch.npu.is_available():
         qtype = q.dtype
         q = q.to(torch.bfloat16)
         k = k.to(torch.bfloat16)
         v = v.to(torch.bfloat16)
-        if version is None and q.shape[1] == k.shape[1] and int(os.getenv('ALGO', 0)) == 1:
+        if rainfusion_config is not None and q.shape[1] == k.shape[1]:
+            rainfusion_fa = Rainfusion(
+                grid_size=rainfusion_config["grid_size"],
+                skip_timesteps=rainfusion_config["skip_timesteps"],
+                sparsity=rainfusion_config["sparsity"],
+            )
+            out = rainfusion_fa(
+                q, k, v,
+                atten_mask_all=rainfusion_config["atten_mask_all"],
+                text_len=0,
+                t_idx=t_idx,
+            )
+        elif version is None and q.shape[1] == k.shape[1] and int(os.getenv('ALGO', 0)) == 1:
             out = attention_forward(q, k, v,
                                 opt_mode="manual", op_type="ascend_laser_attention", layout="BNSD")
         else:

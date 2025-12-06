@@ -44,7 +44,6 @@ class WanTI2V:
         self,
         config,
         checkpoint_dir,
-        quant_data_dir, 
         device_id=0,
         rank=0,
         t5_fsdp=False,
@@ -54,7 +53,7 @@ class WanTI2V:
         init_on_cpu=True,
         convert_model_dtype=False,
         use_vae_parallel=False,
-        quant_mode=0
+        quant_dit_path=None
     ):
         r"""
         Initializes the Wan text-to-video generation model components.
@@ -120,25 +119,20 @@ class WanTI2V:
                 set_vae_patch_parallel(self.vae.model, 4, 2, all_pp_group_ranks= all_pp_group_ranks, decoder_decode="decoder.forward")
 
         logging.info(f"Creating WanModel from {checkpoint_dir}")
-        self.model = WanModel.from_pretrained(checkpoint_dir)
-        
-        if quant_mode == 2:
-            from quant.quant import quantize_weight
-
-            quant_data_dir = os.path.join(quant_data_dir, "ti2v_quant_weights_anti")
-            quantize_weight(self.model, quant_data_dir)
-            logging.info(f"quantize weights saved in {quant_data_dir}")
-            return
-        elif quant_mode == 3:
+        self.model = WanModel.from_pretrained(checkpoint_dir, torch_dtype=self.param_dtype)
+        if quant_dit_path:
+            quant_dit_path = os.path.abspath(quant_dit_path)
+            quant_dit_desc_path = os.path.join(quant_dit_path, "quant_model_description_w8a8_dynamic.json")
+            if not os.path.exists(quant_dit_desc_path):
+                raise FileNotFoundError(f"Quantization description file not found: {quant_dit_desc_path}")
+            logging.info(f"Enabled quant, trying to load quantized DiT model from {quant_dit_path}...")
             from mindiesd import quantize
-
-            quant_data_dir = os.path.join(quant_data_dir, "ti2v_quant_weights_anti")
-            logging.info("use quant!")
-            torch.npu.config.allow_internal_format = True
-            quantize(self.model, os.path.join(quant_data_dir, "quant_model_description_w8a8_dynamic.json"),
-                  use_nz=False)
-            torch.npu.config.allow_internal_format = False
-            self.model = self.model.to(self.device)
+            quantize(
+                model=self.model,
+                quant_des_path=quant_dit_desc_path,
+                use_nz=True
+            )
+            logging.info("Load quantized DiT model successfully")
 
         self.model = self._configure_model(
             model=self.model,
@@ -193,8 +187,8 @@ class WanTI2V:
         else:
             if convert_model_dtype:
                 model.to(self.param_dtype)
-            if not self.init_on_cpu:
-                model.to(self.device)
+            # if not self.init_on_cpu:
+            #     model.to(self.device)
 
         return model
 
@@ -332,7 +326,7 @@ class WanTI2V:
         if n_prompt == "":
             n_prompt = self.sample_neg_prompt
         seed = seed if seed >= 0 else random.randint(0, sys.maxsize)
-        seed_g = torch.Generator(device=self.device)
+        seed_g = torch.Generator(device=torch.device("cpu") if int(os.getenv('PRECISION', 0)) else self.device)
         seed_g.manual_seed(seed)
 
         if not self.t5_cpu:
@@ -354,8 +348,8 @@ class WanTI2V:
                 target_shape[2],
                 target_shape[3],
                 dtype=torch.float32,
-                device=self.device,
-                generator=seed_g)
+                device=torch.device("cpu") if int(os.getenv('PRECISION', 0)) else self.device,
+                generator=seed_g).to(self.device)
         ]
 
         @contextmanager
@@ -531,7 +525,7 @@ class WanTI2V:
         seq_len = int(math.ceil(seq_len / self.sp_size)) * self.sp_size
 
         seed = seed if seed >= 0 else random.randint(0, sys.maxsize)
-        seed_g = torch.Generator(device=self.device)
+        seed_g = torch.Generator(device=torch.device("cpu") if int(os.getenv('PRECISION', 0)) else self.device)
         seed_g.manual_seed(seed)
         noise = torch.randn(
             self.vae.model.z_dim, (F - 1) // self.vae_stride[0] + 1,
@@ -539,7 +533,7 @@ class WanTI2V:
             ow // self.vae_stride[2],
             dtype=torch.float32,
             generator=seed_g,
-            device=self.device)
+            device=torch.device("cpu") if int(os.getenv('PRECISION', 0)) else self.device).to(self.device)
 
         if n_prompt == "":
             n_prompt = self.sample_neg_prompt
