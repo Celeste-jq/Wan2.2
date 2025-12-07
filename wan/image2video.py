@@ -496,8 +496,8 @@ class WanI2V:
         del sample_scheduler
 
         if self.dit_fsdp:
-            self.self.low_noise_model._fsdp_wrapped_module.freqs_list = None
-            self.self.high_noise_model._fsdp_wrapped_module.freqs_list = None
+            self.low_noise_model._fsdp_wrapped_module.freqs_list = None
+            self.high_noise_model._fsdp_wrapped_module.freqs_list = None
         else:
             self.low_noise_model.freqs_list = None
             self.high_noise_model.freqs_list = None
