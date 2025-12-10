@@ -572,7 +572,7 @@ export TASK_QUEUE_ENABLE=2
 export CPU_AFFINITY_CONF=1
 export TOKENIZERS_PARALLELISM=false
 
-model_base="./Wan2.1-T2V-14B/"
+model_base="./Wan2.2-T2V-A14B/"
 quant_dit_path="./quant_w8a8_dynamic/"
 
 torchrun --nproc_per_node=8 --master_port=23459 generate.py \
