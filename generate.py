@@ -86,20 +86,23 @@ def _validate_args(args):
 
     args.base_seed = args.base_seed if args.base_seed >= 0 else random.randint(
         0, sys.maxsize)
-    
+
     # Size check
     assert args.size in SUPPORTED_SIZES[args.task], \
         f"Unsupport size {args.size} for task {args.task}, supported sizes are: {', '.join(SUPPORTED_SIZES[args.task])}"
-    
+
     if args.cfg_size < 1 or args.ulysses_size < 1 or args.ring_size < 1 or args.tp_size < 1:
         raise ValueError(f"cfg_size, ulysses_size, ring_size and tp_size must >= 1, \
                          but get cfg_size={args.cfg_size}, ulysses_size={args.ulysses_size}, ring_size={args.ring_size}, tp_size={args.tp_size}")
 
     if args.tp_size > 1:
         raise NotImplementedError("Tensor Parallel is not supported now")
-    
-    if "ti2v" not in args.task and args.use_attentioncache:
-        raise NotImplementedError(f"{args.task} unsupport attentioncache now")
+
+    if args.use_attentioncache:
+        if "ti2v" not in args.task:
+            raise NotImplementedError(f"{args.task} unsupport attentioncache now")
+        assert args.start_step < args.sample_steps, \
+            "start_step must be less than sample_steps"
 
 
 def _parse_args():
@@ -521,13 +524,13 @@ def generate(args):
         )
 
         transformer = wan_ti2v.model
-        
+
         if args.use_rainfusion:
             if args.dit_fsdp:
                 transformer._fsdp_wrapped_module.rainfusion_config = rainfusion_config
             else:
                 transformer.rainfusion_config = rainfusion_config
-        
+
         if args.tp_size > 1:
             logging.info("Initializing Tensor Parallel ...")
             applicator = TensorParallelApplicator(args.tp_size, device_map="cpu")
@@ -562,7 +565,7 @@ def generate(args):
             guide_scale=args.sample_guide_scale,
             seed=args.base_seed,
             offload_model=args.offload_model)
-        
+
         if args.use_attentioncache:
             config = CacheConfig(
                 method="attention_cache",
@@ -615,7 +618,7 @@ def generate(args):
             use_vae_parallel=args.vae_parallel,
             quant_dit_path=args.quant_dit_path
         )
-        
+
         transformer_low = wan_i2v.low_noise_model
         transformer_high = wan_i2v.high_noise_model
 
@@ -626,7 +629,7 @@ def generate(args):
             else:
                 transformer_low.rainfusion_config = rainfusion_config
                 transformer_high.rainfusion_config = rainfusion_config
-        
+
         if args.tp_size > 1:
             logging.info("Initializing Tensor Parallel ...")
             applicator = TensorParallelApplicator(args.tp_size, device_map="cpu")
@@ -664,7 +667,7 @@ def generate(args):
                 block._fsdp_wrapped_module.args = args
             for block in transformer_low._fsdp_wrapped_module.blocks:
                 block._fsdp_wrapped_module.cache = cache_low
-                block._fsdp_wrapped_module.args = args  
+                block._fsdp_wrapped_module.args = args
         else:
             for block in transformer_high.blocks:
                 block.cache = cache_high
