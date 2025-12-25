@@ -101,7 +101,7 @@ def _validate_args(args):
     if args.use_attentioncache:
         if "ti2v" not in args.task:
             raise NotImplementedError(f"{args.task} unsupport attentioncache now")
-        assert args.start_step < args.sample_steps, \
+        assert args.start_step < args.sample_steps - 1, \
             "start_step must be less than sample_steps"
 
 
