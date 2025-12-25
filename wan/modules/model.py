@@ -75,25 +75,25 @@ class WanLayerNorm(nn.LayerNorm):
         Args:
             x(Tensor): Shape [B, L, C]
         """
-        return torch_npu.npu_layer_norm_eval(
-            x, normalized_shape=[self.dim], weight=self.weight, bias=self.bias, eps=self.eps
+        return torch.nn.functional.layer_norm(
+            x, normalized_shape=[self.dim], weight=self.weight, bias=self.bias, eps=self.eps,
         )
 
 
-class WanLayerNormModulate(nn.LayerNorm):
+# class WanLayerNormModulate(nn.LayerNorm):
 
-    def __init__(self, dim, eps=1e-6, elementwise_affine=False):
-        super().__init__(dim, elementwise_affine=elementwise_affine, eps=eps)
-        self.dim = dim
+#     def __init__(self, dim, eps=1e-6, elementwise_affine=False):
+#         super().__init__(dim, elementwise_affine=elementwise_affine, eps=eps)
+#         self.dim = dim
 
-    def forward(self, x, weight, scale):
-        r"""
-        Args:
-            x(Tensor): Shape [B, L, C]
-        """
-        return torch_npu.npu_layer_norm_eval(
-            x, normalized_shape=[self.dim], weight=weight, bias=scale, eps=self.eps,
-        )
+#     def forward(self, x, weight, scale):
+#         r"""
+#         Args:
+#             x(Tensor): Shape [B, L, C]
+#         """
+#         return torch_npu.npu_layer_norm_eval(
+#             x, normalized_shape=[self.dim], weight=weight, bias=scale, eps=self.eps,
+#         )
 
 
 class WanSelfAttention(nn.Module):
