@@ -157,3 +157,14 @@ def best_output_size(w, h, dw, dh, expected_area):
         return ow1, oh1
     else:
         return ow2, oh2
+
+
+def find_quant_config_file(quant_config_path):
+    quant_config_desc_path = os.path.join(quant_config_path, "quant_model_description_w8a8_dynamic.json")
+    use_nz = True
+
+    if not os.path.exists(quant_config_desc_path):
+        quant_config_desc_path = os.path.join(quant_config_path, "quant_model_description_w8a8_mxfp8.json")
+        use_nz = False
+
+    return quant_config_desc_path, use_nz

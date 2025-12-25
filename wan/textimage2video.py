@@ -28,7 +28,7 @@ from .utils.fm_solvers import (
     retrieve_timesteps,
 )
 from .utils.fm_solvers_unipc import FlowUniPCMultistepScheduler
-from .utils.utils import best_output_size, masks_like
+from .utils.utils import best_output_size, masks_like, find_quant_config_file
 from wan.distributed.parallel_mgr import (
     get_sequence_parallel_world_size,
     get_classifier_free_guidance_world_size,
@@ -123,7 +123,7 @@ class WanTI2V:
         self.model = WanModel.from_pretrained(checkpoint_dir, torch_dtype=self.param_dtype)
         if quant_dit_path:
             quant_dit_path = os.path.abspath(quant_dit_path)
-            quant_dit_desc_path = os.path.join(quant_dit_path, "quant_model_description_w8a8_dynamic.json")
+            quant_dit_desc_path, use_nz = find_quant_config_file(quant_dit_path)
             if not os.path.exists(quant_dit_desc_path):
                 raise FileNotFoundError(f"Quantization description file not found: {quant_dit_desc_path}")
             logging.info(f"Enabled quant, trying to load quantized DiT model from {quant_dit_path}...")
@@ -131,7 +131,7 @@ class WanTI2V:
             quantize(
                 model=self.model,
                 quant_des_path=quant_dit_desc_path,
-                use_nz=True
+                use_nz=use_nz
             )
             logging.info("Load quantized DiT model successfully")
 
