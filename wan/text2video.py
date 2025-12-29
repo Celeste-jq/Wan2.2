@@ -33,6 +33,7 @@ from wan.distributed.parallel_mgr import (
     get_classifier_free_guidance_rank,
     get_cfg_group,
 )
+from .utils.utils import find_quant_config_file
 
 
 class WanT2V:
@@ -123,7 +124,7 @@ class WanT2V:
         if quant_dit_path:
             quant_dit_path = os.path.abspath(quant_dit_path)
             quant_low_noise_path = os.path.join(quant_dit_path, config.low_noise_checkpoint)
-            quant_low_noise_desc_path = os.path.join(quant_low_noise_path, "quant_model_description_w8a8_dynamic.json")
+            quant_low_noise_desc_path, use_nz = find_quant_config_file(quant_low_noise_path)
             if not os.path.exists(quant_low_noise_desc_path):
                 raise FileNotFoundError(f"Quantization description file not found: {quant_low_noise_desc_path}")
             logging.info(f"Enabled quant, trying to load quantized low noise DiT model from {quant_low_noise_path}...")
@@ -147,7 +148,7 @@ class WanT2V:
         if quant_dit_path:
             quant_dit_path = os.path.abspath(quant_dit_path)
             quant_high_noise_path = os.path.join(quant_dit_path, config.high_noise_checkpoint)
-            quant_high_noise_desc_path = os.path.join(quant_high_noise_path, "quant_model_description_w8a8_dynamic.json")
+            quant_high_noise_desc_path, use_nz = find_quant_config_file(quant_high_noise_path)
             if not os.path.exists(quant_high_noise_desc_path):
                 raise FileNotFoundError(f"Quantization description file not found: {quant_high_noise_desc_path}")
             logging.info(f"Enabled quant, trying to load quantized high noise DiT model from {quant_high_noise_path}...")
@@ -155,7 +156,7 @@ class WanT2V:
             quantize(
                 model=self.high_noise_model,
                 quant_des_path=quant_high_noise_desc_path,
-                use_nz=True
+                use_nz=use_nz
             )
             logging.info("Load quantized high noise DiT model successfully")
 
