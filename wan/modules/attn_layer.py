@@ -34,6 +34,7 @@ class xFuserLongContextAttention(LongContextAttention):
         use_kv_cache: bool = False,
         attn_type: AttnType = AttnType.FA,
         rainfusion_config=None,
+        fa_quant=None,
     ) -> None:
         """
         Arguments:
@@ -80,6 +81,8 @@ class xFuserLongContextAttention(LongContextAttention):
                 skip_timesteps=rainfusion_config["skip_timesteps"],
                 sparsity=rainfusion_config["sparsity"],
             )
+        if fa_quant:
+            self.fa_quant = fa_quant
 
     def forward(
         self,
@@ -168,6 +171,8 @@ class xFuserLongContextAttention(LongContextAttention):
             value_layer_list = value_layer.split(1, dim=2)
             output = []
             for_loop = query_layer.shape[2]
+            if scale is None:
+                scale = query.shape[-1] ** -0.5
             for i in range(for_loop):
                 if self.algo == 0:
                     out = attention_forward(query_layer_list[i], key_layer_list[i], value_layer_list[i],
@@ -175,8 +180,15 @@ class xFuserLongContextAttention(LongContextAttention):
                 elif self.algo == 1:
                     out = attention_forward(query_layer_list[i], key_layer_list[i], value_layer_list[i],
                                         opt_mode="manual", op_type="ascend_laser_attention", layout="BNSD")
+                elif self.algo == 3:
+                    if hasattr(self, 'fa_quant'):
+                        out = self.fa_quant(query_layer_list[i].transpose(1,2), key_layer_list[i].transpose(1,2), value_layer_list[i].transpose(1,2), layout="BNSD")
+                    else:
+                        out = torch_npu.npu_fused_infer_attention_score(query_layer_list[i].transpose(1,2), key_layer_list[i].transpose(1,2), value_layer_list[i].transpose(1,2),
+                            num_heads = 1, input_layout = "BNSD", scale = scale, pre_tokens=2147483647, next_tokens=2147483647)[0]
+                    out = out.transpose(1,2)
                 else:
-                    raise ValueError(f"select flash attention algorithm only support 0, 1, but got f{self.algo}")
+                    raise ValueError(f"select flash attention algorithm only support 0, 1, 3, but got f{self.algo}")
 
                 output.append(out)
             out = torch.cat(output, dim=2)
