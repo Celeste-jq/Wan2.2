@@ -132,7 +132,7 @@ class WanT2V:
             quantize(
                 model=self.low_noise_model,
                 quant_des_path=quant_low_noise_desc_path,
-                use_nz=True
+                use_nz=use_nz
             )
             logging.info("Load quantized low noise DiT model successfully")
 
