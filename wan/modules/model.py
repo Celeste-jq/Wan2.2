@@ -13,17 +13,6 @@ from diffusers.models.modeling_utils import ModelMixin
 from .attention import flash_attention
 
 from mindiesd import rotary_position_embedding, attention_forward
-try:
-    import flash_attn_interface
-    FLASH_ATTN_3_AVAILABLE = True
-except ModuleNotFoundError:
-    FLASH_ATTN_3_AVAILABLE = False
-
-try:
-    import flash_attn
-    FLASH_ATTN_2_AVAILABLE = True
-except ModuleNotFoundError:
-    FLASH_ATTN_2_AVAILABLE = False
 
 from wan.utils.rainfusion import Rainfusion
 __all__ = ['WanModel']
@@ -184,22 +173,6 @@ class WanSelfAttention(nn.Module):
                 out = attention_forward(q, k, v,
                                     opt_mode="manual", op_type="fused_attn_score", layout="BNSD")
             return out.to(qtype)
-        elif FLASH_ATTN_2_AVAILABLE or FLASH_ATTN_3_AVAILABLE:
-            return flash_attention(
-                q=q,
-                k=k,
-                v=v,
-                q_lens=q_lens,
-                k_lens=k_lens,
-                dropout_p=dropout_p,
-                softmax_scale=softmax_scale,
-                q_scale=q_scale,
-                causal=causal,
-                window_size=window_size,
-                deterministic=deterministic,
-                dtype=dtype,
-                version=version,
-            )
         else:
             if q_lens is not None or k_lens is not None:
                 warnings.warn(
