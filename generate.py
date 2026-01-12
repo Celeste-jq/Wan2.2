@@ -21,7 +21,7 @@ import torch.distributed as dist
 from PIL import Image
 
 import wan
-from wan.configs import MAX_AREA_CONFIGS, SIZE_CONFIGS, SUPPORTED_SIZES, WAN_CONFIGS
+from wan.configs import MAX_AREA_CONFIGS, SIZE_CONFIGS, SUPPORTED_SIZES, WAN_CONFIGS, OPTIMAL_PARALLEL
 from wan.distributed.util import init_distributed_group
 from wan.utils.prompt_extend import DashScopePromptExpander, QwenPromptExpander
 from wan.utils.utils import save_video, str2bool
@@ -324,7 +324,10 @@ def generate(args):
 
     if args.cfg_size > 1 or args.ulysses_size > 1 or args.ring_size > 1 or args.tp_size > 1:
         assert args.cfg_size * args.ulysses_size * args.ring_size * args.tp_size == world_size, \
-            f"cfg_size {args.cfg_size} * ulysses_size {args.ulysses_size} * ring_size {args.ring_size } * tp_size {args.tp_size} should be equal to the world size {world_size}."
+            f"cfg_size {args.cfg_size} * ulysses_size {args.ulysses_size} * ring_size {args.ring_size} * tp_size {args.tp_size} should be equal to the world size {world_size}."
+        if tuple([args.cfg_size, args.ulysses_size, args.ring_size]) not in OPTIMAL_PARALLEL:
+            logging.info(
+                f"cfg_size = {args.cfg_size}, ulysses_size = {args.ulysses_size}, ring_size = {args.ring_size}, Without the optimal parallel configuration, the model may either fail to run or yield suboptimal generation performance!!")
         sp_degree = args.ulysses_size * args.ring_size
         parallel_config = ParallelConfig(
             sp_degree=sp_degree,
