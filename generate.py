@@ -102,7 +102,7 @@ def _validate_args(args):
         if "ti2v" not in args.task:
             raise NotImplementedError(f"{args.task} unsupport attentioncache now")
         assert args.start_step < args.sample_steps - 1, \
-            "start_step must be less than sample_steps"
+            "start_step must be less than sample_steps - 1"
 
 
 def _parse_args():
@@ -322,9 +322,10 @@ def generate(args):
             args.vae_parallel
         ), f"vae parallel are not supported in non-distributed environments."
 
-    if args.cfg_size > 1 or args.ulysses_size > 1 or args.ring_size > 1 or args.tp_size > 1:
-        assert args.cfg_size * args.ulysses_size * args.ring_size * args.tp_size == world_size, \
+    assert args.cfg_size * args.ulysses_size * args.ring_size * args.tp_size == world_size, \
             f"cfg_size {args.cfg_size} * ulysses_size {args.ulysses_size} * ring_size {args.ring_size} * tp_size {args.tp_size} should be equal to the world size {world_size}."
+
+    if args.cfg_size > 1 or args.ulysses_size > 1 or args.ring_size > 1 or args.tp_size > 1:
         if tuple([args.cfg_size, args.ulysses_size, args.ring_size]) not in OPTIMAL_PARALLEL:
             logging.info(
                 f"cfg_size = {args.cfg_size}, ulysses_size = {args.ulysses_size}, ring_size = {args.ring_size}, Without the optimal parallel configuration, the model may either fail to run or yield suboptimal generation performance!!")
@@ -338,6 +339,11 @@ def generate(args):
             world_size=world_size,
         )
         init_parallel_env(parallel_config)
+
+    if args.vae_parallel:
+        assert dist.is_initialized() and world_size > 1, "VAE Parallel only supports multi-card environment."
+        is_power_of_2 = (world_size & (world_size - 1)) == 0
+        assert is_power_of_2, "VAE Parallel only supports card number equal to powers of two."
 
     if args.tp_size > 1 and args.dit_fsdp:
         logging.info("DiT using Tensor Parallel, disabled dit_fsdp")
