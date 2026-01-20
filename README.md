@@ -43,12 +43,7 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 source /usr/local/Ascend/nnal/atb/set_env.sh
 ```
 
-### 1.3 环境依赖安装
-```shell
-pip3 install -r requirements.txt
-```
-
-### 1.4 MindIE安装
+### 1.3 MindIE安装
 ```shell
 # 增加软件包可执行权限，{version}表示软件版本号，{arch}表示CPU架构。
 chmod +x ./Ascend-mindie_${version}_linux-${arch}.run
@@ -65,7 +60,7 @@ cd /usr/local/Ascend/mindie && source set_env.sh
 cd ${AieInstallPath}/mindie && source set_env.sh
 ```
 
-### 1.5 Torch_npu安装
+### 1.4 Torch_npu安装
 下载 pytorch_v{pytorchversion}_py{pythonversion}.tar.gz
 ```shell
 tar -xzvf pytorch_v{pytorchversion}_py{pythonversion}.tar.gz
@@ -73,7 +68,7 @@ tar -xzvf pytorch_v{pytorchversion}_py{pythonversion}.tar.gz
 pip install torch_npu-{pytorchversion}.xxxx.{arch}.whl
 ```
 
-### 1.6 gcc、g++安装
+### 1.5 gcc、g++安装
 ```shell
 # 若环境镜像中没有gcc、g++，请用户自行安装
 yum install gcc
@@ -116,9 +111,11 @@ export CPLUS_INCLUDE_PATH=/usr/include/c++/12/:/usr/include/c++/12/aarch64-openE
 
 ## 三、Wan2.2使用
 
-### 3.1 下载到本地
+### 3.1 下载到本地，安装模型依赖
 ```shell
 git clone https://modelers.cn/MindIE/Wan2.2.git
+cd Wan2.2
+pip3 install -r requirements.txt
 ```
 
 ### 3.2 Wan2.2-T2V-A14B
