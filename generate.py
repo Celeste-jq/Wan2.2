@@ -5,6 +5,7 @@ import os
 import sys
 import warnings
 from datetime import datetime
+from typing import List, Optional
 
 warnings.filterwarnings('ignore')
 
@@ -292,6 +293,50 @@ def _init_logging(rank):
         logging.basicConfig(level=logging.ERROR)
 
 
+def patch_cast_buffers_for_float8():
+    """
+    Patch FSDP buffer conversion functions for float8 quantization scenarios
+    """
+    try:
+        import torch.distributed.fsdp._runtime_utils as runtime_utils
+
+        original_func = runtime_utils._cast_buffers_to_dtype_and_device
+
+        def float8_aware_cast_buffers(
+            buffers: List[torch.Tensor],
+            buffer_dtypes: List[Optional[torch.dtype]],
+            device: torch.device,
+        ) -> None:
+            assert buffer_dtypes is None or len(buffers) == len(buffer_dtypes), \
+                f"Expects `buffers` and `buffer_dtypes` to have the same length if " \
+                f"`buffer_dtypes` is specified but got {len(buffers)} and " \
+                f"{len(buffer_dtypes)}"
+
+            SPECIAL_DTYPES = {
+                torch.float8_e4m3fn,
+                torch.float8_e5m2,
+            }
+
+            for buffer, buffer_dtype in zip(buffers, buffer_dtypes):
+                is_special_dtype = buffer.dtype in SPECIAL_DTYPES
+
+                if not torch.is_floating_point(buffer) or buffer_dtype is None or is_special_dtype:
+                    buffer.data = buffer.to(device=device)
+                else:
+                    buffer.data = buffer.to(device=device, dtype=buffer_dtype)
+
+        runtime_utils._cast_buffers_to_dtype_and_device = float8_aware_cast_buffers
+
+        return original_func
+
+    except ImportError:
+        print("Warning: Could not import torch.distributed.fsdp._runtime_utils")
+        return None
+    except Exception as e:
+        print(f"Warning: Failed to patch FSDP function: {e}")
+        return None
+
+
 def generate(args):
     rank = int(os.getenv("RANK", 0))
     world_size = int(os.getenv("WORLD_SIZE", 1))
@@ -348,6 +393,9 @@ def generate(args):
     if args.tp_size > 1 and args.dit_fsdp:
         logging.info("DiT using Tensor Parallel, disabled dit_fsdp")
         args.dit_fsdp = False
+
+    if args.quant_dit_path and args.dit_fsdp:
+        patch_cast_buffers_for_float8()
 
     if args.use_prompt_extend:
         if args.prompt_extend_method == "dashscope":
