@@ -20,6 +20,8 @@ from wan.utils.rainfusion import Rainfusion
 
 logger = logging.getLogger(__name__)
 MAX_TOKEN = 2147483647
+stream = torch.npu.Stream(torch.device(f"cuda:{os.environ['LOCAL_RANK']}"))
+
 
 class xFuserLongContextAttention(LongContextAttention):
     ring_impl_type_supported_kv_cache = ["basic"]
@@ -73,6 +75,9 @@ class xFuserLongContextAttention(LongContextAttention):
         self.ulysses_pg = get_sp_group().ulysses_group
         self.ring_pg = get_sp_group().ring_group
 
+        self.ulysess_world_size = dist.get_world_size(self.ulysses_pg)
+        self.ring_world_size = get_sp_group().ring_world_size
+
         self.rainfusion_config = rainfusion_config
         self.rainfusion_fa = None
         if self.rainfusion_config is not None:
@@ -83,6 +88,22 @@ class xFuserLongContextAttention(LongContextAttention):
             )
         if fa_quant:
             self.fa_quant = fa_quant
+
+        self.fa_alltoall_overlap = int(os.getenv('OVERLAP', 0))
+        if self.ring_world_size > 1:
+            self.fa_alltoall_overlap = False
+        if self.fa_alltoall_overlap == True:
+            if "ti2v" in self.args.task:
+                event_nums = 24 // self.ulysess_world_size
+            else:
+                event_nums = 40 // self.ulysess_world_size
+            self.current_stream = torch.npu.current_stream()
+            self.stream2 = stream
+            self.event = []
+            self.event_begin = []
+            for i in range(event_nums):
+                self.event.append(torch.npu.Event())
+                self.event_begin.append(torch.npu.Event())
 
     def forward(
         self,
@@ -123,89 +144,186 @@ class xFuserLongContextAttention(LongContextAttention):
         Returns:
             * output (Tensor): context output
         """
+        if self.fa_alltoall_overlap == True:
+            query_layer_list = query.split(self.ulysess_world_size, dim=2)
+            key_layer_list = key.split(self.ulysess_world_size, dim=2)
+            value_layer_list = value.split(self.ulysess_world_size, dim=2)
+            for_loop = len(query_layer_list)
 
-        query = all_to_all_4D(input_=query, scatter_idx=2, gather_idx=1, group=self.ulysses_pg)
-        key = all_to_all_4D(input_=key, scatter_idx=2, gather_idx=1, group=self.ulysses_pg)
-        value = all_to_all_4D(input_=value, scatter_idx=2, gather_idx=1, group=self.ulysses_pg)
+            output_fa = []
+            qkv_event = torch.npu.Event()
+            qkv_event.record()
+            q_lists, k_lists, v_lists = [], [], []
 
-        if get_sp_group().ring_world_size > 1:
-            ring_size = get_sp_group().ring_world_size
-            b, s, n, d = key.shape
-            k_full = torch.empty([ring_size, b, s, n, d], dtype=query.dtype, device=query.device)
-            dist.all_gather_into_tensor(k_full, key, group=self.ring_pg)
-            key = k_full.permute(1, 0, 2, 3, 4).reshape(b, -1, n, d)
+            with torch.npu.stream(self.current_stream):
+                query_layer = all_to_all_4D(input_=query_layer_list[0], scatter_idx=2, gather_idx=1, group=self.ulysses_pg)
+                key_layer = all_to_all_4D(input_=key_layer_list[0], scatter_idx=2, gather_idx=1, group=self.ulysses_pg)
+                value_layer = all_to_all_4D(input_=value_layer_list[0], scatter_idx=2, gather_idx=1, group=self.ulysses_pg)
 
-            v_full = torch.empty([ring_size, b, s, n, d], dtype=query.dtype, device=query.device)
-            dist.all_gather_into_tensor(v_full, value, group=self.ring_pg)
-            value = v_full.permute(1, 0, 2, 3, 4).reshape(b, -1, n, d)
+                q_lists.append(query_layer)
+                k_lists.append(key_layer)
+                v_lists.append(value_layer)
 
-        ori_seqlen = query.shape[1]
-        if seq_lens is not None and seq_lens < ori_seqlen:
-            query_layer, query_pad = query[:, :seq_lens, :, :], query[:, seq_lens:, :, :]
-            key_layer, key_pad = key[:, :seq_lens, :, :], key[:, seq_lens:, :, :]
-            value_layer, value_pad = value[:, :seq_lens, :, :], value[:, seq_lens:, :, :]
-        else:
-            query_layer, key_layer, value_layer = query, key, value
-
-        if self.rainfusion_config is not None:
-            out = self.rainfusion_fa(
-                query_layer,
-                key_layer,
-                value_layer,
-                atten_mask_all=self.rainfusion_config["atten_mask_all"],
-                text_len=0,
-                t_idx=t_idx,
-            )
-        elif self.use_all_head:
-            if self.algo == 0:
-                out = attention_forward(query_layer, key_layer, value_layer,
-                                        opt_mode="manual", op_type="fused_attn_score", layout="BNSD")
-            elif self.algo == 1:
-                out = attention_forward(query_layer, key_layer, value_layer,
-                                        opt_mode="manual", op_type="ascend_laser_attention", layout="BNSD")
-            else:
-                raise ValueError(f"select flash attention algorithm only support 0, 1, but got {self.algo}")
-        else:
-            query_layer_list = query_layer.split(1, dim=2)
-            key_layer_list = key_layer.split(1, dim=2)
-            value_layer_list = value_layer.split(1, dim=2)
-            output = []
-            for_loop = query_layer.shape[2]
-            if scale is None:
-                scale = query.shape[-1] ** -0.5
-            for i in range(for_loop):
                 if self.algo == 0:
-                    out = attention_forward(query_layer_list[i], key_layer_list[i], value_layer_list[i],
+                    out = attention_forward(q_lists[0], k_lists[0], v_lists[0],
                                         opt_mode="manual", op_type="fused_attn_score", layout="BNSD")
                 elif self.algo == 1:
-                    out = attention_forward(query_layer_list[i], key_layer_list[i], value_layer_list[i],
+                    out = attention_forward(q_lists[0], k_lists[0], v_lists[0],
                                         opt_mode="manual", op_type="ascend_laser_attention", layout="BNSD")
                 elif self.algo == 3:
                     if hasattr(self, 'fa_quant'):
-                        out = self.fa_quant(query_layer_list[i].transpose(1,2), key_layer_list[i].transpose(1,2), value_layer_list[i].transpose(1,2), layout="BNSD")
+                        out = self.fa_quant(q_lists[0].transpose(1,2), k_lists[0].transpose(1,2), v_lists[0].transpose(1,2), layout="BNSD")
                     else:
-                        out = torch_npu.npu_fused_infer_attention_score(query_layer_list[i].transpose(1,2), key_layer_list[i].transpose(1,2), value_layer_list[i].transpose(1,2),
+                        scale = q_lists[0].shape[-1] ** -0.5
+                        out = torch_npu.npu_fused_infer_attention_score(q_lists[0].transpose(1,2), k_lists[0].transpose(1,2), v_lists[0].transpose(1,2),
+                            num_heads = 1, input_layout = "BNSD", scale = scale, pre_tokens=2147483647, next_tokens=2147483647)[0]
+                    out = out.transpose(1,2)
+                else:
+                    raise ValueError(f"select flash attention algorithm only support 0, 1, 3, but got f{self.algo}")
+                output_fa.append(out)
+                self.event[0].record()
+
+            with torch.npu.stream(self.stream2):
+                for i in range(1, for_loop):
+                    self.stream2.wait_event(qkv_event)
+                    # B, S, 1, D
+                    query_layer = all_to_all_4D(input_=query_layer_list[i], scatter_idx=2, gather_idx=1, group=self.ulysses_pg)
+                    key_layer = all_to_all_4D(input_=key_layer_list[i], scatter_idx=2, gather_idx=1, group=self.ulysses_pg)
+                    value_layer = all_to_all_4D(input_=value_layer_list[i], scatter_idx=2, gather_idx=1, group=self.ulysses_pg)
+
+                    self.event[i].record(self.stream2)  # 记录qkv all2all的时间
+                    q_lists.append(query_layer)
+                    k_lists.append(key_layer)
+                    v_lists.append(value_layer)
+
+            for i in range(1, for_loop):
+                self.current_stream.wait_event(self.event[i])
+                query_layer = q_lists[i]
+                key_layer = k_lists[i]
+                value_layer = v_lists[i]
+
+                if self.algo == 0:
+                    out = attention_forward(query_layer, key_layer, value_layer,
+                                        opt_mode="manual", op_type="fused_attn_score", layout="BNSD")
+                elif self.algo == 1:
+                    out = attention_forward(query_layer, key_layer, value_layer,
+                                        opt_mode="manual", op_type="ascend_laser_attention", layout="BNSD")
+                elif self.algo == 3:
+                    if hasattr(self, 'fa_quant'):
+                        out = self.fa_quant(query_layer.transpose(1,2), key_layer.transpose(1,2), value_layer.transpose(1,2), layout="BNSD")
+                    else:
+                        scale = query_layer.shape[-1] ** -0.5
+                        out = torch_npu.npu_fused_infer_attention_score(query_layer.transpose(1,2), key_layer.transpose(1,2), value_layer.transpose(1,2),
                             num_heads = 1, input_layout = "BNSD", scale = scale, pre_tokens=2147483647, next_tokens=2147483647)[0]
                     out = out.transpose(1,2)
                 else:
                     raise ValueError(f"select flash attention algorithm only support 0, 1, 3, but got f{self.algo}")
 
-                output.append(out)
-            out = torch.cat(output, dim=2)
-        
-        if seq_lens is not None and seq_lens < ori_seqlen:
-            out_pad = attention_forward(query_pad, key_pad, value_pad,
-                                        opt_mode="manual", op_type="fused_attn_score", layout="BSND")
-            out = torch.cat([out, out_pad], dim=1)
+                output_fa.append(out)
+                self.event[i].record()
 
-        if type(out) == tuple:
-            context_layer, _, _ = out
+            output_res = []
+            with torch.npu.stream(self.stream2):
+                for i in range(for_loop):
+                    self.stream2.wait_event(self.event[i])
+                    # BSND gather 2 scatetrer 1
+                    output_tmp = all_to_all_4D(input_=output_fa[i], scatter_idx=1, gather_idx=2, group=self.ulysses_pg)
+                    self.event[i].record(self.stream2)
+                    output_res.append(output_tmp)
+            for i in range(for_loop):
+                self.current_stream.wait_event(self.event[i])
+            output = torch.cat(output_res, dim=2)
+
         else:
-            context_layer = out
+            query = all_to_all_4D(input_=query, scatter_idx=2, gather_idx=1, group=self.ulysses_pg)
+            key = all_to_all_4D(input_=key, scatter_idx=2, gather_idx=1, group=self.ulysses_pg)
+            value = all_to_all_4D(input_=value, scatter_idx=2, gather_idx=1, group=self.ulysses_pg)
 
-        # (bs, seq_len, head_cnt/N, head_size) -> (bs, seq_len/N, head_cnt, head_size)
-        # scatter 1, gather 2
-        output = all_to_all_4D(input_=context_layer, scatter_idx=1, gather_idx=2, group=self.ulysses_pg)
+            if get_sp_group().ring_world_size > 1:
+                ring_size = get_sp_group().ring_world_size
+                b, s, n, d = key.shape
+                k_full = torch.empty([ring_size, b, s, n, d], dtype=query.dtype, device=query.device)
+                dist.all_gather_into_tensor(k_full, key, group=self.ring_pg)
+                key = k_full.permute(1, 0, 2, 3, 4).reshape(b, -1, n, d)
+
+                v_full = torch.empty([ring_size, b, s, n, d], dtype=query.dtype, device=query.device)
+                dist.all_gather_into_tensor(v_full, value, group=self.ring_pg)
+                value = v_full.permute(1, 0, 2, 3, 4).reshape(b, -1, n, d)
+
+            ori_seqlen = query.shape[1]
+            if seq_lens is not None and seq_lens < ori_seqlen:
+                query_layer, query_pad = query[:, :seq_lens, :, :], query[:, seq_lens:, :, :]
+                key_layer, key_pad = key[:, :seq_lens, :, :], key[:, seq_lens:, :, :]
+                value_layer, value_pad = value[:, :seq_lens, :, :], value[:, seq_lens:, :, :]
+            else:
+                query_layer, key_layer, value_layer = query, key, value
+
+            if self.rainfusion_config is not None:
+                out = self.rainfusion_fa(
+                    query_layer,
+                    key_layer,
+                    value_layer,
+                    atten_mask_all=self.rainfusion_config["atten_mask_all"],
+                    text_len=0,
+                    t_idx=t_idx,
+                )
+            elif self.use_all_head:
+                if self.algo == 0:
+                    out = attention_forward(query_layer, key_layer, value_layer,
+                                            opt_mode="manual", op_type="fused_attn_score", layout="BNSD")
+                elif self.algo == 1:
+                    out = attention_forward(query_layer, key_layer, value_layer,
+                                            opt_mode="manual", op_type="ascend_laser_attention", layout="BNSD")
+                elif self.algo == 3:
+                    if hasattr(self, 'fa_quant'):
+                        out = self.fa_quant(query_layer.transpose(1,2), key_layer.transpose(1,2), value_layer.transpose(1,2), layout="BNSD")
+                    else:
+                        scale = query_layer.shape[-1] ** -0.5
+                        out = torch_npu.npu_fused_infer_attention_score(query_layer.transpose(1,2), key_layer.transpose(1,2), value_layer.transpose(1,2),
+                            num_heads = 1, input_layout = "BNSD", scale = scale, pre_tokens=2147483647, next_tokens=2147483647)[0]
+                    out = out.transpose(1,2)
+                else:
+                    raise ValueError(f"select flash attention algorithm only support 0, 1, 3, but got f{self.algo}")
+            else:
+                query_layer_list = query_layer.split(1, dim=2)
+                key_layer_list = key_layer.split(1, dim=2)
+                value_layer_list = value_layer.split(1, dim=2)
+                output = []
+                for_loop = query_layer.shape[2]
+                if scale is None:
+                    scale = query.shape[-1] ** -0.5
+                for i in range(for_loop):
+                    if self.algo == 0:
+                        out = attention_forward(query_layer_list[i], key_layer_list[i], value_layer_list[i],
+                                            opt_mode="manual", op_type="fused_attn_score", layout="BNSD")
+                    elif self.algo == 1:
+                        out = attention_forward(query_layer_list[i], key_layer_list[i], value_layer_list[i],
+                                            opt_mode="manual", op_type="ascend_laser_attention", layout="BNSD")
+                    elif self.algo == 3:
+                        if hasattr(self, 'fa_quant'):
+                            out = self.fa_quant(query_layer_list[i].transpose(1,2), key_layer_list[i].transpose(1,2), value_layer_list[i].transpose(1,2), layout="BNSD")
+                        else:
+                            out = torch_npu.npu_fused_infer_attention_score(query_layer_list[i].transpose(1,2), key_layer_list[i].transpose(1,2), value_layer_list[i].transpose(1,2),
+                                num_heads = 1, input_layout = "BNSD", scale = scale, pre_tokens=2147483647, next_tokens=2147483647)[0]
+                        out = out.transpose(1,2)
+                    else:
+                        raise ValueError(f"select flash attention algorithm only support 0, 1, 3, but got f{self.algo}")
+
+                    output.append(out)
+                out = torch.cat(output, dim=2)
+            
+            if seq_lens is not None and seq_lens < ori_seqlen:
+                out_pad = attention_forward(query_pad, key_pad, value_pad,
+                                            opt_mode="manual", op_type="fused_attn_score", layout="BSND")
+                out = torch.cat([out, out_pad], dim=1)
+
+            if type(out) == tuple:
+                context_layer, _, _ = out
+            else:
+                context_layer = out
+
+            # (bs, seq_len, head_cnt/N, head_size) -> (bs, seq_len/N, head_cnt, head_size)
+            # scatter 1, gather 2
+            output = all_to_all_4D(input_=context_layer, scatter_idx=1, gather_idx=2, group=self.ulysses_pg)
 
         return output
-
