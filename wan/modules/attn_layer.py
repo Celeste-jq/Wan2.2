@@ -20,7 +20,8 @@ from wan.utils.rainfusion import Rainfusion
 
 logger = logging.getLogger(__name__)
 MAX_TOKEN = 2147483647
-stream = torch.npu.Stream(torch.device(f"cuda:{os.environ['LOCAL_RANK']}"))
+local_rank = int(os.getenv('LOCAL_RANK', 0))
+stream = torch.npu.Stream(torch.device(f"cuda:{local_rank}"))
 
 
 class xFuserLongContextAttention(LongContextAttention):
