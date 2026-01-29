@@ -78,6 +78,13 @@ class WanLayerNorm(nn.LayerNorm):
         Args:
             x(Tensor): Shape [B, L, C]
         """
+        if hasattr(torch.ops, 'mindie') and hasattr(torch.ops.mindie, 'layernorm'):
+            try:
+                return torch.ops.mindie.layernorm(
+                    x, normalized_shape=[self.dim], weight=self.weight, bias=self.bias, eps=self.eps, impl_mode=0)[0]
+            except Exception:
+                pass
+
         return torch.nn.functional.layer_norm(
             x, normalized_shape=[self.dim], weight=self.weight, bias=self.bias, eps=self.eps,
         )
