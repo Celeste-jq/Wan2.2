@@ -131,7 +131,37 @@ class WanSelfAttention(nn.Module):
         self.norm_q = WanRMSNorm(dim, eps=eps) if qk_norm else nn.Identity()
         self.norm_k = WanRMSNorm(dim, eps=eps) if qk_norm else nn.Identity()
 
+        self.use_sub_head = int(os.getenv('USE_SUB_HEAD', 0))
+
     def attention(self,
+        q,
+        k,
+        v,
+        **kwargs
+    ):
+        if self.use_sub_head:
+            query_layer_list = q.split(self.use_sub_head, dim=2)
+            key_layer_list = k.split(self.use_sub_head, dim=2)
+            value_layer_list = v.split(self.use_sub_head, dim=2)
+            output = []
+            for_loop = q.shape[2] // self.use_sub_head
+
+            for i in range(for_loop):
+                output.append(
+                    self._attention_op(
+                        query_layer_list[i],
+                        key_layer_list[i],
+                        value_layer_list[i],
+                        **kwargs
+                    )
+                )
+            out = torch.cat(output, dim=2)
+        else:
+            out = self._attention_op(q, k, v, **kwargs)
+        return out
+
+
+    def _attention_op(self,
         q,
         k,
         v,
