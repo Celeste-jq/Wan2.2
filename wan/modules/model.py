@@ -132,6 +132,9 @@ class WanSelfAttention(nn.Module):
         self.norm_k = WanRMSNorm(dim, eps=eps) if qk_norm else nn.Identity()
 
         self.use_sub_head = int(os.getenv('USE_SUB_HEAD', 0))
+        if self.use_sub_head != 0:
+            assert num_heads % self.use_sub_head == 0, \
+                    f"num_heads ({num_heads}) must be divisible by self.use_sub_head ({self.use_sub_head})"
 
     def attention(self,
         q,
