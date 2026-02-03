@@ -16,7 +16,6 @@ from mindiesd.layers.flash_attn.attention_forward import attention_forward
 
 from ..distributed.parallel_mgr import get_sp_group
 from ..distributed.comm import all_to_all_4D
-from wan.utils.rainfusion import Rainfusion
 
 logger = logging.getLogger(__name__)
 MAX_TOKEN = 2147483647
@@ -82,6 +81,7 @@ class xFuserLongContextAttention(LongContextAttention):
         self.rainfusion_config = rainfusion_config
         self.rainfusion_fa = None
         if self.rainfusion_config is not None:
+            from wan.utils.rainfusion import Rainfusion
             self.rainfusion_fa = Rainfusion(
                 grid_size=rainfusion_config["grid_size"],
                 skip_timesteps=rainfusion_config["skip_timesteps"],
