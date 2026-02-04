@@ -12,7 +12,7 @@ from diffusers.models.modeling_utils import ModelMixin
 
 from .attention import flash_attention
 
-from mindiesd import rotary_position_embedding, attention_forward
+from mindiesd import rotary_position_embedding, attention_forward, fast_layernorm
 
 from wan.utils.rainfusion import Rainfusion
 __all__ = ['WanModel']
@@ -78,13 +78,6 @@ class WanLayerNorm(nn.LayerNorm):
         Args:
             x(Tensor): Shape [B, L, C]
         """
-        if hasattr(torch.ops, 'mindie') and hasattr(torch.ops.mindie, 'layernorm'):
-            try:
-                return torch.ops.mindie.layernorm(
-                    x, normalized_shape=[self.dim], weight=self.weight, bias=self.bias, eps=self.eps, impl_mode=0)[0]
-            except Exception:
-                pass
-
         return torch.nn.functional.layer_norm(
             x, normalized_shape=[self.dim], weight=self.weight, bias=self.bias, eps=self.eps,
         )
@@ -360,7 +353,7 @@ class WanAttentionBlock(nn.Module):
 
         y = self.cache.apply(
                 self.self_attn,
-                self.norm1(x) * (1 + e[1].squeeze(2)) + e[0].squeeze(2),
+                fast_layernorm(self.norm1, x) * (1 + e[1].squeeze(2)) + e[0].squeeze(2),
                 seq_lens,
                 grid_sizes,
                 freqs,
@@ -373,9 +366,9 @@ class WanAttentionBlock(nn.Module):
 
         # cross-attention & ffn function
         def cross_attn_ffn(x, context, context_lens, e):
-            x = x + self.cross_attn(self.norm3(x), context, context_lens)
+            x = x + self.cross_attn(fast_layernorm(self.norm3, x), context, context_lens)
             y = self.ffn(
-                self.norm2(x) * (1 + e[4].squeeze(2)) + e[3].squeeze(2))
+                fast_layernorm(self.norm2, x) * (1 + e[4].squeeze(2)) + e[3].squeeze(2))
             with torch.amp.autocast('cuda', dtype=torch.bfloat16):
                 x = x + y * e[5].squeeze(2)
             return x
