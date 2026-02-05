@@ -81,12 +81,22 @@ class xFuserLongContextAttention(LongContextAttention):
         self.rainfusion_config = rainfusion_config
         self.rainfusion_fa = None
         if self.rainfusion_config is not None:
-            from wan.utils.rainfusion import Rainfusion
-            self.rainfusion_fa = Rainfusion(
-                grid_size=rainfusion_config["grid_size"],
-                skip_timesteps=rainfusion_config["skip_timesteps"],
-                sparsity=rainfusion_config["sparsity"],
-            )
+            if rainfusion_config["type"] == "v1":
+                from wan.utils.rainfusion import Rainfusion
+                self.rainfusion_fa = Rainfusion(
+                    grid_size=rainfusion_config["grid_size"],
+                    skip_timesteps=rainfusion_config["skip_timesteps"],
+                    sparsity=rainfusion_config["sparsity"],
+                )
+            else:
+                from wan.utils.rainfusion_blockwise import Rainfusion_blockwise
+                self.rainfusion_fa_blockwise = Rainfusion_blockwise(
+                    grid_size=rainfusion_config["grid_size"],
+                    pool_size=128,
+                    sparsity=rainfusion_config["sparsity"],
+                    skip_timesteps=rainfusion_config["skip_timesteps"],
+                    txt_len=0,
+                )
         if fa_quant:
             self.fa_quant = fa_quant
 
@@ -127,6 +137,7 @@ class xFuserLongContextAttention(LongContextAttention):
         joint_strategy="none",
         scale=None,
         t_idx=-1,
+        b_idx=-1
     ) -> Tensor:
         """forward
 
@@ -260,14 +271,23 @@ class xFuserLongContextAttention(LongContextAttention):
                 query_layer, key_layer, value_layer = query, key, value
 
             if self.rainfusion_config is not None:
-                out = self.rainfusion_fa(
-                    query_layer,
-                    key_layer,
-                    value_layer,
-                    atten_mask_all=self.rainfusion_config["atten_mask_all"],
-                    text_len=0,
-                    t_idx=t_idx,
-                )
+                if self.rainfusion_config["type"] == "v1":
+                    out = self.rainfusion_fa(
+                        query_layer,
+                        key_layer,
+                        value_layer,
+                        atten_mask_all=self.rainfusion_config["atten_mask_all"],
+                        text_len=0,
+                        t_idx=t_idx,
+                    )
+                else:
+                    out, _ = self.rainfusion_fa_blockwise(
+                       query_layer,
+                       key_layer,
+                       value_layer,
+                       t_b_idx=[t_idx, b_idx],
+                       base_blockmask=None,
+                   )
             elif self.use_all_head:
                 if self.algo == 0:
                     out = attention_forward(query_layer, key_layer, value_layer,
