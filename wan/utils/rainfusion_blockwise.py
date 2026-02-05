@@ -6,9 +6,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 import time
-
+import mindiesd
 from mindiesd.layers.flash_attn.attention_forward import attention_forward
-from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v2 import rain_fusion_attention
+
 
 class Rainfusion_blockwise(nn.Module):
     def __init__(
@@ -244,7 +244,7 @@ class Rainfusion_blockwise(nn.Module):
             q_tnd = q.reshape(-1, numHeads,headDim)
             k_tnd = k.reshape(-1, numHeads,headDim)
             v_tnd = v.reshape(-1, numHeads,headDim)
-            x = rain_fusion_attention(
+            x = mindiesd.layers.flash_attn.sparse_flash_attn_rf_v2.rain_fusion_attention(
                 q_tnd, k_tnd, v_tnd,
                 scale=scale,
                 head_num=numHeads,
