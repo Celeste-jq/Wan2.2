@@ -277,6 +277,12 @@ def add_rainfusion_args(parser: argparse.ArgumentParser):
     group.add_argument("--use_rainfusion", action='store_true', help="Whether to use sparse fa")
     group.add_argument("--sparsity", type=float, default=0.64, help="Sparsity of flash attention, greater means more speed")
     group.add_argument("--sparse_start_step", type=int, default=15)
+    parser.add_argument(
+        "--rainfusion_type",
+        type=str,
+        default="v1",
+        choices=["v1", "v2"],
+        help="The type of rainfusion type.")
 
     return parser
 
@@ -459,7 +465,8 @@ def generate(args):
         "sparsity": args.sparsity,
         "skip_timesteps": args.sparse_start_step,
         "grid_size": None,
-        "atten_mask_all": None
+        "atten_mask_all": None,
+        "type": args.rainfusion_type
     }
 
     if "t2v" in args.task:
