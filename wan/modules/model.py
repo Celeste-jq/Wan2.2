@@ -12,7 +12,10 @@ from diffusers.models.modeling_utils import ModelMixin
 
 from .attention import flash_attention
 
-from mindiesd import rotary_position_embedding, attention_forward, fast_layernorm
+from mindiesd import rotary_position_embedding, attention_forward
+FAST_LAYERNORM = int(os.getenv('FAST_LAYERNORM', 0))
+if FAST_LAYERNORM:
+    from mindiesd import fast_layernorm
 
 from wan.utils.rainfusion import Rainfusion
 __all__ = ['WanModel']
@@ -350,10 +353,13 @@ class WanAttentionBlock(nn.Module):
         with torch.amp.autocast('cuda', dtype=torch.bfloat16):
             e = (self.modulation.unsqueeze(0) + e).chunk(6, dim=2)
         # assert e[0].dtype == torch.float32
-
+        if FAST_LAYERNORM == 1:
+            norm1_out = fast_layernorm(self.norm1, x)
+        else:
+            norm1_out = self.norm1(x)
         y = self.cache.apply(
                 self.self_attn,
-                fast_layernorm(self.norm1, x) * (1 + e[1].squeeze(2)) + e[0].squeeze(2),
+                norm1_out * (1 + e[1].squeeze(2)) + e[0].squeeze(2),
                 seq_lens,
                 grid_sizes,
                 freqs,
@@ -366,9 +372,17 @@ class WanAttentionBlock(nn.Module):
 
         # cross-attention & ffn function
         def cross_attn_ffn(x, context, context_lens, e):
-            x = x + self.cross_attn(fast_layernorm(self.norm3, x), context, context_lens)
+            if FAST_LAYERNORM == 1:
+                norm3_out = fast_layernorm(self.norm3, x)
+            else:
+                norm3_out = self.norm3(x)
+            x = x + self.cross_attn(norm3_out, context, context_lens)
+            if FAST_LAYERNORM == 1:
+                norm2_out = fast_layernorm(self.norm2, x)
+            else:
+                norm2_out = self.norm2(x)
             y = self.ffn(
-                fast_layernorm(self.norm2, x) * (1 + e[4].squeeze(2)) + e[3].squeeze(2))
+                norm2_out * (1 + e[4].squeeze(2)) + e[3].squeeze(2))
             with torch.amp.autocast('cuda', dtype=torch.bfloat16):
                 x = x + y * e[5].squeeze(2)
             return x
