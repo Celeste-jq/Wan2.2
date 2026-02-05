@@ -18,6 +18,7 @@ if FAST_LAYERNORM:
     from mindiesd import fast_layernorm
 
 from wan.utils.rainfusion import Rainfusion
+from wan.utils.rainfusion_blockwise import Rainfusion_blockwise
 __all__ = ['WanModel']
 
 
@@ -175,7 +176,8 @@ class WanSelfAttention(nn.Module):
         dtype=torch.bfloat16,
         version=None,
         rainfusion_config=None,
-        t_idx=None
+        t_idx=None,
+        b_idx=None
     ):
         if torch.npu.is_available():
             qtype = q.dtype
@@ -183,17 +185,30 @@ class WanSelfAttention(nn.Module):
             k = k.to(torch.bfloat16)
             v = v.to(torch.bfloat16)
             if rainfusion_config is not None and q.shape[1] == k.shape[1]:
-                rainfusion_fa = Rainfusion(
-                    grid_size=rainfusion_config["grid_size"],
-                    skip_timesteps=rainfusion_config["skip_timesteps"],
-                    sparsity=rainfusion_config["sparsity"],
-                )
-                out = rainfusion_fa(
-                    q, k, v,
-                    atten_mask_all=rainfusion_config["atten_mask_all"],
-                    text_len=0,
-                    t_idx=t_idx,
-                )
+                if rainfusion_config["type"] == "v1":
+                    rainfusion_fa = Rainfusion(
+                        grid_size=rainfusion_config["c"],
+                        skip_timesteps=rainfusion_config["skip_timesteps"],
+                        sparsity=rainfusion_config["sparsity"],
+                    )
+                    out = rainfusion_fa(
+                        q, k, v,
+                        atten_mask_all=rainfusion_config["atten_mask_all"],
+                        text_len=0,
+                        t_idx=t_idx,
+                    )
+                else:
+                    rainfusion_fa_blockwise = Rainfusion_blockwise(
+                        pool_size=128,
+                        sparsity=rainfusion_config["sparsity"],
+                        skip_timesteps=rainfusion_config["skip_timesteps"],
+                        txt_len=0,
+                        )
+                    out, _ = rainfusion_fa_blockwise(
+                       q, k, v,
+                       t_b_idx=[t_idx, b_idx],
+                       base_blockmask=None,
+                   )
             elif version is None and q.shape[1] == k.shape[1] and int(os.getenv('ALGO', 0)) == 1:
                 out = attention_forward(q, k, v,
                                     opt_mode="manual", op_type="ascend_laser_attention", layout="BNSD")
@@ -227,7 +242,7 @@ class WanSelfAttention(nn.Module):
             return out
 
 
-    def forward(self, x, seq_lens, grid_sizes, freqs, args=None, rainfusion_config=None, t_idx=None):
+    def forward(self, x, seq_lens, grid_sizes, freqs, args=None, rainfusion_config=None, t_idx=None, b_idx=None):
         r"""
         Args:
             x(Tensor): Shape [B, L, num_heads, C / num_heads]
@@ -254,6 +269,7 @@ class WanSelfAttention(nn.Module):
             window_size=self.window_size,
             rainfusion_config=rainfusion_config,
             t_idx=t_idx,
+            b_idx=b_idx
         )
 
         # output
@@ -340,6 +356,7 @@ class WanAttentionBlock(nn.Module):
         context_lens,
         rainfusion_config,
         t_idx,
+        b_idx
     ):
         r"""
         Args:
@@ -365,7 +382,8 @@ class WanAttentionBlock(nn.Module):
                 freqs,
                 self.args,
                 rainfusion_config=rainfusion_config,
-                t_idx=t_idx
+                t_idx=t_idx,
+                b_idx=b_idx
         )
         with torch.amp.autocast('cuda', dtype=torch.bfloat16):
             x = x + y * e[2].squeeze(2)
@@ -572,12 +590,15 @@ class WanModel(ModelMixin, ConfigMixin):
                 List of denoised video tensors with original input shapes [C_out, F, H / 8, W / 8]
         """
         if self.rainfusion_config and self.rainfusion_config["atten_mask_all"] is None:
-            self.rainfusion_config["grid_size"] = Rainfusion.get_grid_size(x[0].shape, self.patch_size)
-            logging.info(f"Rainfusion grid size: {self.rainfusion_config['grid_size']}")
-            self.rainfusion_config["atten_mask_all"] = Rainfusion.get_atten_mask(
-                grid_size=self.rainfusion_config["grid_size"],
-                sparsity=self.rainfusion_config["sparsity"]
-            )
+            if self.rainfusion_config["type"] == "v1":
+                self.rainfusion_config["grid_size"] = Rainfusion.get_grid_size(x[0].shape, self.patch_size)
+                logging.info(f"Rainfusion grid size: {self.rainfusion_config['grid_size']}")
+                self.rainfusion_config["atten_mask_all"] = Rainfusion.get_atten_mask(
+                    grid_size=self.rainfusion_config["grid_size"],
+                    sparsity=self.rainfusion_config["sparsity"]
+                )
+            else:
+                self.rainfusion_config["grid_size"] = Rainfusion_blockwise.get_grid_size(x[0].shape, self.patch_size)
         
         if self.model_type == 'i2v':
             assert y is not None
@@ -656,8 +677,8 @@ class WanModel(ModelMixin, ConfigMixin):
             t_idx=t_idx,
         )
 
-        for block in self.blocks:
-            x = block(x, **kwargs)
+        for b_idx, block in enumerate(self.blocks):
+            x = block(x, b_idx=b_idx, **kwargs)
 
         # head
         x = self.head(x, e)
