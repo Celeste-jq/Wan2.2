@@ -11,6 +11,7 @@ from ..modules.attn_layer import xFuserLongContextAttention
 
 from ..modules.model import sinusoidal_embedding_1d
 from wan.utils.rainfusion import Rainfusion
+from wan.utils.rainfusion_blockwise import Rainfusion_blockwise
 from mindiesd import rotary_position_embedding
 
 
@@ -49,12 +50,16 @@ def sp_dit_forward(
     context:        A list of text embeddings each with shape [L, C].
     """
     if self.rainfusion_config and self.rainfusion_config["atten_mask_all"] is None:
-        self.rainfusion_config["grid_size"] = Rainfusion.get_grid_size(x[0].shape, self.patch_size)
-        logging.info(f"Rainfusion grid size: {self.rainfusion_config['grid_size']}")
-        self.rainfusion_config["atten_mask_all"] = Rainfusion.get_atten_mask(
-            grid_size=self.rainfusion_config["grid_size"],
-            sparsity=self.rainfusion_config["sparsity"]
-        )
+        if self.rainfusion_config["type"] == "v1":
+            self.rainfusion_config["grid_size"] = Rainfusion.get_grid_size(x[0].shape, self.patch_size)
+            logging.info(f"Rainfusion grid size: {self.rainfusion_config['grid_size']}")
+            self.rainfusion_config["atten_mask_all"] = Rainfusion.get_atten_mask(
+                grid_size=self.rainfusion_config["grid_size"],
+                sparsity=self.rainfusion_config["sparsity"]
+            )
+        else:
+            self.rainfusion_config["grid_size"] = Rainfusion_blockwise.get_grid_size(x[0].shape, self.patch_size)
+            logging.info(f"Rainfusion grid size: {self.rainfusion_config['grid_size']}")
     if self.model_type == 'i2v':
         assert y is not None
     # params
@@ -142,8 +147,8 @@ def sp_dit_forward(
         t_idx=t_idx,
     )
 
-    for block in self.blocks:
-        x = block(x, **kwargs)
+    for b_idx, block in enumerate(self.blocks):
+        x = block(x, b_idx=b_idx, **kwargs)
 
     # head
     x = self.head(x, e)
@@ -156,7 +161,7 @@ def sp_dit_forward(
     return [u.float() for u in x]
 
 
-def sp_attn_forward(self, x, seq_lens, grid_sizes, freqs, args, dtype=torch.bfloat16, rainfusion_config=None, t_idx=None):
+def sp_attn_forward(self, x, seq_lens, grid_sizes, freqs, args, dtype=torch.bfloat16, rainfusion_config=None, t_idx=None, b_idx=None):
     b, s, n, d = *x.shape[:2], self.num_heads, self.head_dim
     half_dtypes = (torch.float16, torch.bfloat16)
 
@@ -182,6 +187,7 @@ def sp_attn_forward(self, x, seq_lens, grid_sizes, freqs, args, dtype=torch.bflo
         seq_lens=seq_lens,
         window_size=self.window_size,
         t_idx=t_idx,
+        b_idx=b_idx,
     )
 
     # output
