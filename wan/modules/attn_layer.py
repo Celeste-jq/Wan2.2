@@ -6,6 +6,7 @@ import torch.distributed as dist
 import math
 import os
 from yunchang import LongContextAttention
+
 try:
     from yunchang.kernels import AttnType
 except ImportError:
@@ -51,12 +52,12 @@ class xFuserLongContextAttention(LongContextAttention):
             gather_idx=gather_idx,
             ring_impl_type=ring_impl_type,
             use_pack_qkv=use_pack_qkv,
-            attn_type = attn_type,
+            attn_type=attn_type,
         )
         self.use_kv_cache = use_kv_cache
         if (
-            use_kv_cache
-            and ring_impl_type not in self.ring_impl_type_supported_kv_cache
+                use_kv_cache
+                and ring_impl_type not in self.ring_impl_type_supported_kv_cache
         ):
             raise RuntimeError(
                 f"ring_impl_type: {ring_impl_type} do not support SP kv cache."
@@ -71,7 +72,7 @@ class xFuserLongContextAttention(LongContextAttention):
             self.use_all_head = True
         else:
             self.use_all_head = False
-        
+
         self.ulysses_pg = get_sp_group().ulysses_group
         self.ring_pg = get_sp_group().ring_group
 
@@ -147,7 +148,7 @@ class xFuserLongContextAttention(LongContextAttention):
             key (Tensor): key input to the layer
             value (Tensor): value input to the layer
             args: other args,
-            joint_tensor_query: Tensor = None, a replicated tensor among processes appended to the front or rear of query, depends the joint_strategy  
+            joint_tensor_query: Tensor = None, a replicated tensor among processes appended to the front or rear of query, depends the joint_strategy
             joint_tensor_key: Tensor = None, a replicated tensor among processes appended to the front or rear of key, depends the joint_strategy
             joint_tensor_value: Tensor = None, a replicated tensor among processes appended to the front or rear of value, depends the joint_strategy,
             *args: the args same as flash_attn_interface
@@ -172,16 +173,26 @@ class xFuserLongContextAttention(LongContextAttention):
                 key_layer = all_to_all_4D(input_=key_layer_list[0], scatter_idx=2, gather_idx=1, group=self.ulysses_pg)
                 value_layer = all_to_all_4D(input_=value_layer_list[0], scatter_idx=2, gather_idx=1, group=self.ulysses_pg)
 
+                ori_seqlen = query_layer.shape[1]
+                need_pad = False
+
+                if seq_lens is not None and seq_lens < ori_seqlen:
+                    need_pad = True
+                    # 照搬 else 分支逻辑：切分出 pad 部分，并将 query_layer 重赋值为有效部分
+                    query_layer, query_pad = query_layer[:, :seq_lens, :, :], query_layer[:, seq_lens:, :, :]
+                    key_layer, key_pad = key_layer[:, :seq_lens, :, :], key_layer[:, seq_lens:, :, :]
+                    value_layer, value_pad = value_layer[:, :seq_lens, :, :], value_layer[:, seq_lens:, :, :]
+
                 q_lists.append(query_layer)
                 k_lists.append(key_layer)
                 v_lists.append(value_layer)
 
                 if self.algo == 0:
                     out = attention_forward(q_lists[0], k_lists[0], v_lists[0],
-                                        opt_mode="manual", op_type="fused_attn_score", layout="BNSD")
+                                            opt_mode="manual", op_type="fused_attn_score", layout="BNSD")
                 elif self.algo == 1:
                     out = attention_forward(q_lists[0], k_lists[0], v_lists[0],
-                                        opt_mode="manual", op_type="ascend_laser_attention", layout="BNSD")
+                                            opt_mode="manual", op_type="ascend_laser_attention", layout="BNSD")
                 elif self.algo == 3:
                     if hasattr(self, 'fa_quant'):
                         out = self.fa_quant(q_lists[0].transpose(1,2), k_lists[0].transpose(1,2), v_lists[0].transpose(1,2), layout="BNSD")
@@ -192,6 +203,12 @@ class xFuserLongContextAttention(LongContextAttention):
                     out = out.transpose(1,2)
                 else:
                     raise ValueError(f"select flash attention algorithm only support 0, 1, 3, but got f{self.algo}")
+
+                if need_pad:
+                    out_pad = attention_forward(query_pad, key_pad, value_pad,
+                                                opt_mode="manual", op_type="fused_attn_score", layout="BSND")
+                    out = torch.cat([out, out_pad], dim=1)
+
                 output_fa.append(out)
                 self.event[0].record()
 
@@ -214,12 +231,21 @@ class xFuserLongContextAttention(LongContextAttention):
                 key_layer = k_lists[i]
                 value_layer = v_lists[i]
 
+                ori_seqlen = query_layer.shape[1]
+                need_pad = False
+                if seq_lens is not None and seq_lens < ori_seqlen:
+                    need_pad = True
+                    # 照搬 else 分支逻辑：切分出 pad 部分，并将 query_layer 重赋值为有效部分
+                    query_layer, query_pad = query_layer[:, :seq_lens, :, :], query_layer[:, seq_lens:, :, :]
+                    key_layer, key_pad = key_layer[:, :seq_lens, :, :], key_layer[:, seq_lens:, :, :]
+                    value_layer, value_pad = value_layer[:, :seq_lens, :, :], value_layer[:, seq_lens:, :, :]
+
                 if self.algo == 0:
                     out = attention_forward(query_layer, key_layer, value_layer,
-                                        opt_mode="manual", op_type="fused_attn_score", layout="BNSD")
+                                            opt_mode="manual", op_type="fused_attn_score", layout="BNSD")
                 elif self.algo == 1:
                     out = attention_forward(query_layer, key_layer, value_layer,
-                                        opt_mode="manual", op_type="ascend_laser_attention", layout="BNSD")
+                                            opt_mode="manual", op_type="ascend_laser_attention", layout="BNSD")
                 elif self.algo == 3:
                     if hasattr(self, 'fa_quant'):
                         out = self.fa_quant(query_layer.transpose(1,2), key_layer.transpose(1,2), value_layer.transpose(1,2), layout="BNSD")
@@ -230,6 +256,12 @@ class xFuserLongContextAttention(LongContextAttention):
                     out = out.transpose(1,2)
                 else:
                     raise ValueError(f"select flash attention algorithm only support 0, 1, 3, but got f{self.algo}")
+
+                # 照搬 else 分支逻辑：如果有 pad，计算 pad 部分并拼接
+                if need_pad:
+                    out_pad = attention_forward(query_pad, key_pad, value_pad,
+                                                opt_mode="manual", op_type="fused_attn_score", layout="BSND")
+                    out = torch.cat([out, out_pad], dim=1)
 
                 output_fa.append(out)
                 self.event[i].record()
@@ -316,10 +348,10 @@ class xFuserLongContextAttention(LongContextAttention):
                 for i in range(for_loop):
                     if self.algo == 0:
                         out = attention_forward(query_layer_list[i], key_layer_list[i], value_layer_list[i],
-                                            opt_mode="manual", op_type="fused_attn_score", layout="BNSD")
+                                                opt_mode="manual", op_type="fused_attn_score", layout="BNSD")
                     elif self.algo == 1:
                         out = attention_forward(query_layer_list[i], key_layer_list[i], value_layer_list[i],
-                                            opt_mode="manual", op_type="ascend_laser_attention", layout="BNSD")
+                                                opt_mode="manual", op_type="ascend_laser_attention", layout="BNSD")
                     elif self.algo == 3:
                         if hasattr(self, 'fa_quant'):
                             out = self.fa_quant(query_layer_list[i].transpose(1,2), key_layer_list[i].transpose(1,2), value_layer_list[i].transpose(1,2), layout="BNSD")
@@ -332,7 +364,7 @@ class xFuserLongContextAttention(LongContextAttention):
 
                     output.append(out)
                 out = torch.cat(output, dim=2)
-            
+
             if seq_lens is not None and seq_lens < ori_seqlen:
                 out_pad = attention_forward(query_pad, key_pad, value_pad,
                                             opt_mode="manual", op_type="fused_attn_score", layout="BSND")
