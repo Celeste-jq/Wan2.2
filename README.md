@@ -28,15 +28,12 @@ license: apache-2.0
 # 增加软件包可执行权限，{version}表示软件版本号，{arch}表示CPU架构，{soc}表示昇腾AI处理器的版本。
 chmod +x ./Ascend-cann-toolkit_{version}_linux-{arch}.run
 chmod +x ./Ascend-cann-kernels-{soc}_{version}_linux.run
-chmod +x ./Ascend-cann-nnal_{version}_linux-{arch}.run  (若使用稀疏FA)
 # 校验软件包安装文件的一致性和完整性
 ./Ascend-cann-toolkit_{version}_linux-{arch}.run --check
 ./Ascend-cann-kernels-{soc}_{version}_linux.run --check
-./Ascend-cann-nnal{version}_linux-{arch}.run --check  (若使用稀疏FA)
 # 安装
 ./Ascend-cann-toolkit_{version}_linux-{arch}.run --install
 ./Ascend-cann-kernels-{soc}_{version}_linux.run --install
-./Ascend-cann-nnal{version}_linux-{arch}.run --torch_atb --install  (若使用稀疏FA)
 
 # 设置环境变量
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
@@ -127,11 +124,12 @@ model_base="./Wan2.2-T2V-A14B/"
 #### 3.2.1.1 8卡性能测试
 执行命令：
 ```shell
-export ALGO=0
+export ALGO=1
 export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
 export TASK_QUEUE_ENABLE=2
 export CPU_AFFINITY_CONF=1
 export TOKENIZERS_PARALLELISM=false
+export FAST_LAYERNORM=1
 
 torchrun --nproc_per_node=8 --master_port=23459 generate.py \
 --task t2v-A14B \
@@ -150,6 +148,7 @@ torchrun --nproc_per_node=8 --master_port=23459 generate.py \
 ```
 参数说明：
 - ALGO: 为0表示默认FA算子; 设置为1表示使用高性能FA算子
+- FAST_LAYERNORM: 为0表示使用原生layernorm计算方式, 为1表示使用高性能layernorm算子
 - task: 任务类型。
 - ckpt_dir: 模型的权重路径
 - size: 生成视频的分辨率，支持(1280,720)、(832,480)分辨率
@@ -166,11 +165,12 @@ torchrun --nproc_per_node=8 --master_port=23459 generate.py \
 #### 3.2.1.2 16卡性能测试
 执行命令：
 ```shell
-export ALGO=0
+export ALGO=1
 export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
 export TASK_QUEUE_ENABLE=2
 export CPU_AFFINITY_CONF=1
 export TOKENIZERS_PARALLELISM=false
+export FAST_LAYERNORM=1
 
 torchrun --nproc_per_node=16 --master_port=23459 generate.py \
 --task t2v-A14B \
@@ -195,6 +195,7 @@ export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
 export TASK_QUEUE_ENABLE=2
 export CPU_AFFINITY_CONF=1
 export TOKENIZERS_PARALLELISM=false
+export FAST_LAYERNORM=1
 
 torchrun --nproc_per_node=8 --master_port=23459 generate.py \
 --task t2v-A14B \
@@ -209,14 +210,16 @@ torchrun --nproc_per_node=8 --master_port=23459 generate.py \
 --vae_parallel \
 --prompt "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." \
 --use_rainfusion \
---sparsity 0.64 \
---sparse_start_step 15 \
+--sparsity 0.8 \
+--rainfusion_type "v2" \
+--sparse_start_step 15
 --base_seed 0
 ```
 参数说明：
 - use_rainfusion: 使能稀疏flash attention计算
 - sparsity: 稀疏度，值为[0, 1), 稀疏度越大，加速比越高，相应精度损失更大
 - spasre_start_step: 开始稀疏的时间步，通常需要保证不小于1/4的总时间步数
+- rainfusion_type: 默认为'v2', 'v1'将不再维护
 
 
 ### 3.3 Wan2.2-I2V-A14B
@@ -230,11 +233,12 @@ model_base="./Wan2.2-I2V-A14B/"
 
 执行命令：
 ```shell
-export ALGO=0
+export ALGO=1
 export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
 export TASK_QUEUE_ENABLE=2
 export CPU_AFFINITY_CONF=1
 export TOKENIZERS_PARALLELISM=false
+export FAST_LAYERNORM=1
 
 torchrun --nproc_per_node=8 generate.py \
 --task i2v-A14B \
@@ -253,6 +257,7 @@ torchrun --nproc_per_node=8 generate.py \
 ```
 参数说明：
 - ALGO: 为0表示默认FA算子; 设置为1表示使用高性能FA算子
+- FAST_LAYERNORM: 为0表示使用原生layernorm计算方式, 为1表示使用高性能layernorm算子
 - task: 任务类型。
 - ckpt_dir: 模型的权重路径
 - size: 生成视频的分辨率，支持(1280,720)、(832,480)分辨率
@@ -270,11 +275,12 @@ torchrun --nproc_per_node=8 generate.py \
 #### 3.3.1.2 16卡性能测试
 执行命令：
 ```shell
-export ALGO=0
+export ALGO=1
 export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
 export TASK_QUEUE_ENABLE=2
 export CPU_AFFINITY_CONF=1
 export TOKENIZERS_PARALLELISM=false
+export FAST_LAYERNORM=1
 
 torchrun --nproc_per_node=16 --master_port=23459 generate.py \
 --task i2v-A14B \
@@ -296,11 +302,12 @@ torchrun --nproc_per_node=16 --master_port=23459 generate.py \
 #### 3.3.2.1 8卡性能测试
 执行命令：
 ```shell
-export ALGO=0
+export ALGO=1
 export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
 export TASK_QUEUE_ENABLE=2
 export CPU_AFFINITY_CONF=1
 export TOKENIZERS_PARALLELISM=false
+export FAST_LAYERNORM=1
 
 torchrun --nproc_per_node=8 generate.py \
 --task i2v-A14B \
@@ -316,8 +323,9 @@ torchrun --nproc_per_node=8 generate.py \
 --image examples/i2v_input.JPG \
 --prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
 --use_rainfusion \
---sparsity 0.64 \
---sparse_start_step 15 \
+--sparsity 0.8 \
+--rainfusion_type "v2" \
+--sparse_start_step 15
 --base_seed 0
 ```
 
@@ -325,7 +333,7 @@ torchrun --nproc_per_node=8 generate.py \
 - use_rainfusion: 使能稀疏flash attention计算
 - sparsity: 稀疏度，值为[0, 1), 稀疏度越大，加速比越高，相应精度损失更大
 - spasre_start_step: 开始稀疏的时间步，通常需要保证不小于1/4的总时间步数
-
+- rainfusion_type: 默认为'v2', 'v1'将不再维护
 
 ### 3.4 Wan2.2-TI2V-5B
 使用上一步下载的权重
@@ -337,11 +345,12 @@ model_base="./Wan2.2-TI2V-5B/"
 #### 3.4.1.1 单卡性能测试
 执行命令：
 ```shell
-export ALGO=0
+export ALGO=1
 export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
 export TASK_QUEUE_ENABLE=2
 export CPU_AFFINITY_CONF=1
 export TOKENIZERS_PARALLELISM=false
+export FAST_LAYERNORM=1
 
 python generate.py \
 --task ti2v-5B \
@@ -356,6 +365,7 @@ python generate.py \
 ```
 参数说明：
 - ALGO: 为0表示默认FA算子；设置为1表示使用高性能FA算子
+- FAST_LAYERNORM: 为0表示使用原生layernorm计算方式, 为1表示使用高性能layernorm算子
 - task: 任务类型。
 - ckpt_dir: 模型的权重路径
 - size: 生成视频的分辨率，支持(1280,720)、(832,480)分辨率
@@ -371,7 +381,7 @@ python generate.py \
 
 执行命令:
 ```shell
-export ALGO=0
+export ALGO=1
 export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
 export TASK_QUEUE_ENABLE=2
 export CPU_AFFINITY_CONF=1
@@ -391,8 +401,10 @@ torchrun --nproc_per_node=8 generate.py \
 --prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard. The fluffy-furred feline gazes directly at the camera with a relaxed expression. Blurred beach scenery forms the background featuring crystal-clear waters, distant green hills, and a blue sky dotted with white clouds. The cat assumes a naturally relaxed posture, as if savoring the sea breeze and warm sunlight. A close-up shot highlights the feline's intricate details and the refreshing atmosphere of the seaside." \
 --base_seed 0
 ```
+
 参数说明：
 - ALGO: 为0表示默认FA算子；设置为1表示使用高性能FA算子
+- FAST_LAYERNORM: 为0表示使用原生layernorm计算方式, 为1表示使用高性能layernorm算子
 - task: 任务类型。
 - ckpt_dir: 模型的权重路径
 - size: 生成视频的分辨率，支持(1280,720)、(832,480)分辨率
@@ -410,11 +422,12 @@ torchrun --nproc_per_node=8 generate.py \
 #### 3.4.1.3 16卡性能测试
 执行命令：
 ```shell
-export ALGO=0
+export ALGO=1
 export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
 export TASK_QUEUE_ENABLE=2
 export CPU_AFFINITY_CONF=1
 export TOKENIZERS_PARALLELISM=false
+export FAST_LAYERNORM=1
 
 torchrun --nproc_per_node=16 --master_port=23459 generate.py \
 --task ti2v-5B \
@@ -436,11 +449,12 @@ torchrun --nproc_per_node=16 --master_port=23459 generate.py \
 #### 3.4.2.1 单卡性能测试
 执行命令：
 ```shell
-export ALGO=0
+export ALGO=1
 export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
 export TASK_QUEUE_ENABLE=2
 export CPU_AFFINITY_CONF=1
 export TOKENIZERS_PARALLELISM=false
+export FAST_LAYERNORM=1
 
 python generate.py \
 --task ti2v-5B \
@@ -458,6 +472,7 @@ python generate.py \
 ```
 参数说明：
 - ALGO: 为0表示默认FA算子；设置为1表示使用高性能FA算子
+- FAST_LAYERNORM: 为0表示使用原生layernorm计算方式, 为1表示使用高性能layernorm算子
 - use_attentioncache: 使能attentioncache策略
 - start_step: cache开始的step
 - attentioncache_interval: cache重计算间隔
@@ -467,11 +482,13 @@ python generate.py \
 
 执行命令：
 ```shell
-export ALGO=0
+export ALGO=1
 export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
 export TASK_QUEUE_ENABLE=2
 export CPU_AFFINITY_CONF=1
 export TOKENIZERS_PARALLELISM=false
+export FAST_LAYERNORM=1
+
 torchrun --nproc_per_node=8 generate.py \
 --task ti2v-5B \
 --ckpt_dir ${model_base} \
@@ -495,11 +512,12 @@ torchrun --nproc_per_node=8 generate.py \
 #### 3.4.2.1 16卡性能测试
 执行命令：
 ```shell
-export ALGO=0
+export ALGO=1
 export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
 export TASK_QUEUE_ENABLE=2
 export CPU_AFFINITY_CONF=1
 export TOKENIZERS_PARALLELISM=false
+export FAST_LAYERNORM=1
 
 torchrun --nproc_per_node=16 --master_port=23459 generate.py \
 --task ti2v-5B \
@@ -563,11 +581,12 @@ python quant_wan22.py \
 ### 4.3 量化模型推理
 以Wan2.2-T2V-A14B模型为例，执行量化推理
 ```shell
-export ALGO=0
+export ALGO=1
 export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
 export TASK_QUEUE_ENABLE=2
 export CPU_AFFINITY_CONF=1
 export TOKENIZERS_PARALLELISM=false
+export FAST_LAYERNORM=1
 
 model_base="./Wan2.2-T2V-A14B/"
 quant_dit_path="./quant_w8a8_dynamic/"
