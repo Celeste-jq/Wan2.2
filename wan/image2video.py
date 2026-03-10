@@ -11,6 +11,7 @@ from functools import partial
 
 import numpy as np
 import torch
+import torch_npu
 import torch.cuda.amp as amp
 import torch.distributed as dist
 import torchvision.transforms.functional as TF
@@ -92,7 +93,9 @@ class WanI2V:
         self.boundary = config.boundary
         self.param_dtype = config.param_dtype
 
-        if t5_fsdp or dit_fsdp or use_sp:
+        DEVICE_95 = '95' in torch_npu.npu.get_device_name()
+
+        if t5_fsdp or dit_fsdp or use_sp or DEVICE_95:
             self.init_on_cpu = False
 
         shard_fn = partial(shard_model, device_id=device_id)
