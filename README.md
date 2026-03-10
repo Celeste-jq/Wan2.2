@@ -542,7 +542,8 @@ torchrun --nproc_per_node=16 --master_port=23459 generate.py \
 
 ## 四、量化功能支持
 新增Wan2.2-T2V、Wan2.2-I2V、Wan2.2-TI2V的W8A8_dynamic量化支持，针对DiT模型进行量化，降低现存占用，提高模型推理性能
-### 4.1 安装量化工具msModelSlim
+### 4.1 W8A8 INT8量化推理性能测试
+#### 4.1.1 安装量化工具msModelSlim
 下载并安装msmodelslim工具
 ```shell
 git clone https://gitcode.com/Ascend/msit
@@ -550,7 +551,7 @@ cd msit/msmodelslim
 bash install.sh
 ```
 
-### 4.2 导出量化权重
+#### 4.1.2 导出量化权重
 以Wan2.2-T2V-A14B模型为例，导出DiT的W8A8量化权重及描述文件
 ```shell
 cd /path/to/Wan2.2
@@ -578,7 +579,7 @@ python quant_wan22.py \
   - `quant_model_description_w8a8_dynamic.json`：量化配置描述文件
   - `quant_model_weight_w8a8_dynamic.safetensors`：量化后的权重文件
 
-### 4.3 量化模型推理
+#### 4.1.3 量化模型推理
 以Wan2.2-T2V-A14B模型为例，执行量化推理
 ```shell
 export ALGO=1
@@ -609,6 +610,158 @@ torchrun --nproc_per_node=8 --master_port=23459 generate.py \
 参数说明：
 - quant_dit_path：量化DiT模型权重的路径，传入该参数则使能量化
 
+### 4.2 W8A8 MXFP8量化推理性能测试
+#### 4.2.1 安装量化工具msModelSlim
+下载并安装msmodelslim工具
+```shell
+# 1. git clone msmodelslim 代码
+git clone https://gitcode.com/Ascend/msmodelslim.git
+
+# 2. 进入到 msmodelslim 的目录并运行安装脚本
+cd msmodelslim
+bash install.sh
+```
+
+#### 4.2.2 导出量化权重
+以Wan2.2-T2V-A14B模型为例，导出DiT的W8A8 MXFP8量化权重及描述文件
+```shell
+cd /path/to/Wan2.2
+
+# 设置权重路径
+model_base="./Wan2.2-T2V-A14B/"
+# 设置权重保存路径
+save_path="./quant_w8a8_mxfp8"
+
+msmodelslim quant \
+    --model_path ${model_base} \
+    --save_path ${save_path} \
+    --device npu \
+    --model_type Wan2.2 \
+    --trust_remote_code True \
+    --config_path msmodelslim/lab_practice/wan2_2/wan2_2_w8a8_mxfp8_t2v.yaml
+```
+参数说明：
+- config_path: 指定量化算法配置yaml路径，msmodelslim工具中自带最佳实践
+
+执行后，"./quant_w8a8_mxfp8"目录下会生成两个文件夹：
+- `t2v_high_noise_model`
+  - `quant_model_description_w8a8_mxfp8.json`：量化配置描述文件
+  - `quant_model_weight_w8a8_mxfp8.safetensors`：量化后的权重文件
+- `t2v_low_noise_model`
+  - `quant_model_description_w8a8_mxfp8.json`：量化配置描述文件
+  - `quant_model_weight_w8a8_mxfp8.safetensors`：量化后的权重文件
+
+按照模型导入路径修改文件夹命名：
+```shell
+cd ./quant_w8a8_mxfp8
+mv t2v_high_noise_model high_noise_model
+mv t2v_low_noise_model low_noise_model
+```
+
+#### 4.2.3 量化模型推理
+以Wan2.2-T2V-A14B模型为例，执行量化推理
+```shell
+export ALGO=0
+export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
+export TASK_QUEUE_ENABLE=2
+export CPU_AFFINITY_CONF=1
+export TOKENIZERS_PARALLELISM=false
+export FAST_LAYERNORM=1
+
+model_base="./Wan2.2-T2V-A14B/"
+quant_dit_path="./quant_w8a8_mxfp8/"
+
+torchrun --nproc_per_node=8 --master_port=23459 generate.py \
+--task t2v-A14B \
+--ckpt_dir ${model_base} \
+--quant_dit_path ${quant_dit_path} \
+--size 1280*720 \
+--frame_num 81 \
+--sample_steps 40 \
+--cfg_size 1 \
+--ulysses_size 8 \
+--vae_parallel \
+--prompt "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." \
+--base_seed 0
+```
+
+### 4.3 W8A8 MXFP8 + attention FP8量化推理性能测试
+#### 4.3.1 安装量化工具msModelSlim
+下载并安装msmodelslim工具
+```shell
+# 1. git clone msmodelslim 代码
+git clone https://gitcode.com/Ascend/msmodelslim.git
+
+# 2. 进入到 msmodelslim 的目录并运行安装脚本
+cd msmodelslim
+bash install.sh
+```
+
+#### 4.3.2 导出量化权重
+以Wan2.2-T2V-A14B模型为例，导出DiT的W8A8 MXFP8 + attention FP8量化权重及描述文件
+```shell
+cd /path/to/Wan2.2
+
+# 设置权重路径
+model_base="./Wan2.2-T2V-A14B/"
+# 设置权重保存路径
+save_path="./quant_w8a8c8_mxfp8"
+
+msmodelslim quant \
+    --model_path ${model_base} \
+    --save_path ${save_path} \
+    --device npu \
+    --model_type Wan2.2 \
+    --trust_remote_code True \
+    --config_path msmodelslim/lab_practice/wan2_2/wan2_2_w8a8c8_mxfp8_t2v.yaml
+```
+参数说明：
+- config_path: 指定量化算法配置yaml路径，msmodelslim工具中自带最佳实践
+
+执行后，"./quant_w8a8_mxfp8"目录下会生成两个文件夹：
+- `t2v_high_noise_model`
+  - `quant_model_description_w8a8_mxfp8.json`：量化配置描述文件
+  - `quant_model_weight_w8a8_mxfp8.safetensors`：量化后的权重文件
+- `t2v_low_noise_model`
+  - `quant_model_description_w8a8_mxfp8.json`：量化配置描述文件
+  - `quant_model_weight_w8a8_mxfp8.safetensors`：量化后的权重文件
+
+按照模型导入路径修改文件夹命名：
+```shell
+cd ./quant_w8a8_mxfp8
+mv t2v_high_noise_model high_noise_model
+mv t2v_low_noise_model low_noise_model
+```
+
+#### 4.3.3 量化模型推理
+以Wan2.2-T2V-A14B模型为例，执行量化推理
+```shell
+export ALGO=3
+export PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'
+export TASK_QUEUE_ENABLE=2
+export CPU_AFFINITY_CONF=1
+export TOKENIZERS_PARALLELISM=false
+export FAST_LAYERNORM=1
+
+model_base="./Wan2.2-T2V-A14B/"
+quant_dit_path="./quant_w8a8c8_mxfp8/"
+
+torchrun --nproc_per_node=8 --master_port=23459 generate.py \
+--task t2v-A14B \
+--ckpt_dir ${model_base} \
+--quant_dit_path ${quant_dit_path} \
+--size 1280*720 \
+--frame_num 81 \
+--sample_steps 40 \
+--cfg_size 1 \
+--ulysses_size 8 \
+--vae_parallel \
+--prompt "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage." \
+--base_seed 0
+```
+
+参数说明：
+- ALGO: 加载w8a8c8量化权重后，配置ALGO=3时使能W8A8 MXFP8 + attention FP8量化，配置ALGO=0时，仅使能W8A8 MXFP8量化
 
 ## 五、推理结果参考
 ###  Atlas 800I A2(8*64G) 64核(arm)性能数据 (ALGO=1)
