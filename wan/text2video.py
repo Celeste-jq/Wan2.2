@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from functools import partial
 
 import torch
+import torch_npu
 import torch.cuda.amp as amp
 import torch.distributed as dist
 from tqdm import tqdm
@@ -90,7 +91,9 @@ class WanT2V:
         self.boundary = config.boundary
         self.param_dtype = config.param_dtype
 
-        if t5_fsdp or dit_fsdp or use_sp:
+        DEVICE_95 = '95' in torch_npu.npu.get_device_name()
+
+        if t5_fsdp or dit_fsdp or use_sp or DEVICE_95:
             self.init_on_cpu = False
 
         shard_fn = partial(shard_model, device_id=device_id)

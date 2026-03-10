@@ -167,4 +167,8 @@ def find_quant_config_file(quant_config_path):
         quant_config_desc_path = os.path.join(quant_config_path, "quant_model_description_w8a8_mxfp8.json")
         use_nz = False
 
+    if not os.path.exists(quant_config_desc_path):
+        quant_config_desc_path = os.path.join(quant_config_path, "quant_model_description_w4a4_mxfp4_dualscale.json")
+        use_nz = True
+
     return quant_config_desc_path, use_nz
