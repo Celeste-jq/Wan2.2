@@ -1,6 +1,8 @@
 # Copyright 2024-2025 The Alibaba Wan Team Authors. All rights reserved.
 import logging
+import os
 import torch
+import torch_npu
 import torch.cuda.amp as amp
 from .parallel_mgr import (
     get_sequence_parallel_rank,
@@ -176,8 +178,13 @@ def sp_attn_forward(self, x, seq_lens, grid_sizes, freqs, args, dtype=torch.bflo
         return q, k, v
 
     q, k, v = qkv_fn(x)
-    q = rope_apply(q, grid_sizes, freqs)
-    k = rope_apply(k, grid_sizes, freqs)
+
+    if int(os.getenv('ROPE_OPT', 0)) == 1:
+        cos, sin = freqs[0]
+        q, k = torch_npu.npu_apply_rotary_pos_emb(q, k, cos.to(torch.bfloat16), sin.to(torch.bfloat16), rotary_mode='interleave')
+    else:
+        q = rope_apply(q, grid_sizes, freqs)
+        k = rope_apply(k, grid_sizes, freqs)
 
     x = xFuserLongContextAttention(args, rainfusion_config=rainfusion_config, fa_quant=getattr(self, 'fa_quant', None))(
         None,
