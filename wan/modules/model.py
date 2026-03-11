@@ -265,8 +265,8 @@ class WanSelfAttention(nn.Module):
             cos, sin = freqs[0]
             q, k = torch_npu.npu_apply_rotary_pos_emb(q, k, cos.to(torch.bfloat16), sin.to(torch.bfloat16), rotary_mode='interleave')
         else:
-            q=rope_apply(q, grid_sizes, freqs),
-            k=rope_apply(k, grid_sizes, freqs),
+            q=rope_apply(q, grid_sizes, freqs)
+            k=rope_apply(k, grid_sizes, freqs)
 
         x = self.attention(
             q=q,
