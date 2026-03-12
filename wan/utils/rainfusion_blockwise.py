@@ -241,14 +241,14 @@ class Rainfusion_blockwise(nn.Module):
                 qkv, qkv_pool, h_res_len, w_res_len = self.do_tensor_rearrange_pooling(qkv)
                 q,k,v = torch.chunk(qkv, 3, dim=0)
 
-            q_tnd = q.reshape(-1, numHeads,headDim)
-            k_tnd = k.reshape(-1, numHeads,headDim)
-            v_tnd = v.reshape(-1, numHeads,headDim)
+            q_bnsd = q.transpose(1, 2)
+            k_bnsd = k.transpose(1, 2)
+            v_bnsd = v.transpose(1, 2)
             x = mindiesd.layers.flash_attn.sparse_flash_attn_rf_v2.rain_fusion_attention(
-                q_tnd, k_tnd, v_tnd,
+                q_bnsd, k_bnsd, v_bnsd,
                 scale=scale,
                 head_num=numHeads,
-                input_layout="TND",
+                input_layout="BNSD",
                 select_idx=selectIdx,
                 select_num_idx=selectNumIdx,
                 blockshape=blockShape,
@@ -256,7 +256,7 @@ class Rainfusion_blockwise(nn.Module):
                 actual_seq_lengths_kv=actualSeqLengthsKvHost
             )
             
-            x = x.view(batch, qSeqlen, numHeads, headDim)
+            x = x.transpose(1, 2).view(batch, qSeqlen, numHeads, headDim)
 
             x = self.do_tensor_inv_rearrange(x, h_res_len, w_res_len)
             base_blockmask = None
