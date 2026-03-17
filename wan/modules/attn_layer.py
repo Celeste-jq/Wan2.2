@@ -333,7 +333,7 @@ class xFuserLongContextAttention(LongContextAttention):
                     else:
                         scale = query_layer.shape[-1] ** -0.5
                         out = torch_npu.npu_fused_infer_attention_score(query_layer.transpose(1,2), key_layer.transpose(1,2), value_layer.transpose(1,2),
-                            num_heads = 1, input_layout = "BNSD", scale = scale, pre_tokens=2147483647, next_tokens=2147483647)[0]
+                            num_heads = query_layer.shape[2], input_layout = "BNSD", scale = scale, pre_tokens=2147483647, next_tokens=2147483647)[0]
                     out = out.transpose(1,2)
                 else:
                     raise ValueError(f"select flash attention algorithm only support 0, 1, 3, but got f{self.algo}")
