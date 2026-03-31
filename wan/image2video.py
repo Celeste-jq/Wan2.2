@@ -326,7 +326,12 @@ class WanI2V:
 
         max_seq_len = ((F - 1) // self.vae_stride[0] + 1) * lat_h * lat_w // (
             self.patch_size[1] * self.patch_size[2])
-        max_seq_len = int(math.ceil(max_seq_len / self.sp_size)) * self.sp_size
+
+        if int(os.getenv('QUANT_ALLTOALL', 0)):
+            PADDING_SIZE = 256
+        else:
+            PADDING_SIZE = 1
+        max_seq_len = int(math.ceil(max_seq_len / (self.sp_size * PADDING_SIZE))) * (self.sp_size * PADDING_SIZE)
 
         seed = seed if seed >= 0 else random.randint(0, sys.maxsize)
         seed_g = torch.Generator(device=torch.device("cpu") if int(os.getenv('PRECISION', 0)) else self.device)

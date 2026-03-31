@@ -1,5 +1,6 @@
 # Copyright 2024-2025 The Alibaba Wan Team Authors. All rights reserved.
 import logging
+import os
 import torch
 import torch.cuda.amp as amp
 from .parallel_mgr import (
@@ -7,7 +8,7 @@ from .parallel_mgr import (
     get_sequence_parallel_world_size,
     get_sp_group,
 )
-from ..modules.attn_layer import xFuserLongContextAttention
+from ..modules.attn_layer import xFuserLongContextAttention, QuantAllToAllAttention
 
 from ..modules.model import sinusoidal_embedding_1d
 from wan.utils.rainfusion import Rainfusion
@@ -75,8 +76,11 @@ def sp_dit_forward(
     grid_sizes = torch.stack(
         [torch.tensor(u.shape[2:], dtype=torch.long) for u in x])
     x = [u.flatten(2).transpose(1, 2) for u in x]
-    seq_lens = torch.tensor([u.size(1) for u in x], dtype=torch.long)
-    assert seq_lens.max() <= seq_len
+    if int(os.getenv('QUANT_ALLTOALL', 0)):
+        seq_lens = None
+    else:
+        seq_lens = torch.tensor([u.size(1) for u in x], dtype=torch.long)
+        assert seq_lens.max() <= seq_len
     x = torch.cat([
         torch.cat([u, u.new_zeros(1, seq_len - u.size(1), u.size(2))], dim=1)
         for u in x
@@ -179,7 +183,8 @@ def sp_attn_forward(self, x, seq_lens, grid_sizes, freqs, args, dtype=torch.bflo
     q = rope_apply(q, grid_sizes, freqs)
     k = rope_apply(k, grid_sizes, freqs)
 
-    x = xFuserLongContextAttention(args, rainfusion_config=rainfusion_config, fa_quant=getattr(self, 'fa_quant', None))(
+    attn_cls = QuantAllToAllAttention if int(os.getenv('QUANT_ALLTOALL', 0)) else xFuserLongContextAttention
+    x = attn_cls(args, rainfusion_config=rainfusion_config, fa_quant=getattr(self, 'fa_quant', None))(
         None,
         query=half(q),
         key=half(k),
