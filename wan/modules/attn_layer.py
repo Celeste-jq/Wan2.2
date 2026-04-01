@@ -14,7 +14,6 @@ except ImportError:
 from typing import Any
 
 from mindiesd.layers.flash_attn.attention_forward import attention_forward
-from mindiesd.layers.quant.block_quant import fa_block_quant_preprocess
 
 from ..distributed.parallel_mgr import get_sp_group
 from ..distributed.comm import all_to_all_4D
@@ -432,6 +431,7 @@ class QuantAllToAllAttention(xFuserLongContextAttention):
             q_rot, k_rot = self._get_rot(q_bnsd.shape[-1], q_bnsd.device, q_bnsd.dtype)
             q_bnsd = torch.matmul(q_bnsd, q_rot)
             k_bnsd = torch.matmul(k_bnsd, k_rot)
+            from mindiesd.layers.quant.block_quant import fa_block_quant_preprocess
             q_bnsd, q_scale = fa_block_quant_preprocess(
                 q_bnsd, block_size=128, dst_type=torch_npu.float8_e4m3fn, layout="BNSD")
             k_bnsd, k_scale = fa_block_quant_preprocess(
@@ -544,6 +544,7 @@ class QuantAllToAllAttention(xFuserLongContextAttention):
     def _forward_fp8_no_overlap(self, query, key, value, seq_lens):
         """Non-overlap branch with FP8 pre-quantization before Ulysses All-to-All."""
         origin_dtype = query.dtype
+        from mindiesd.layers.quant.block_quant import fa_block_quant_preprocess
 
         # Rotate Q/K before quantization (same as FP8RotateQuantFA), then quantize in BSND
         q_rot, k_rot = self._get_rot(query.shape[-1], query.device, query.dtype)
@@ -628,6 +629,7 @@ class QuantAllToAllAttention(xFuserLongContextAttention):
     def _forward_fp8_overlap(self, query, key, value, seq_lens):
         """Overlap branch with FP8 pre-quantization before Ulysses All-to-All."""
         origin_dtype = query.dtype
+        from mindiesd.layers.quant.block_quant import fa_block_quant_preprocess
 
         q_rot, k_rot = self._get_rot(query.shape[-1], query.device, query.dtype)
         q_fp8, q_scale = fa_block_quant_preprocess(
