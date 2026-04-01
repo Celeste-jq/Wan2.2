@@ -323,9 +323,13 @@ class WanTI2V:
                         size[1] // self.vae_stride[1],
                         size[0] // self.vae_stride[2])
 
+        if int(os.getenv('QUANT_ALLTOALL', 0)):
+            PADDING_SIZE = 256
+        else:
+            PADDING_SIZE = 1
         seq_len = math.ceil((target_shape[2] * target_shape[3]) /
                             (self.patch_size[1] * self.patch_size[2]) *
-                            target_shape[1] / self.sp_size) * self.sp_size
+                            target_shape[1] / (self.sp_size * PADDING_SIZE)) * (self.sp_size * PADDING_SIZE)
 
         if n_prompt == "":
             n_prompt = self.sample_neg_prompt
