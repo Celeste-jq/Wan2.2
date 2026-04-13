@@ -35,7 +35,7 @@ from wan.distributed.parallel_mgr import (
     get_cfg_group,
 )
 from .utils.utils import find_quant_config_file
-
+from mindiesd.quantization import TimestepManager
 
 class WanT2V:
 
@@ -387,6 +387,7 @@ class WanT2V:
 
             # sample videos
             latents = noise
+            TimestepManager.set_timestep_idx_max(len(timesteps))
 
             arg_c = {'context': context, 'seq_len': seq_len}
             arg_null = {'context': context_null, 'seq_len': seq_len}
@@ -396,6 +397,7 @@ class WanT2V:
             }
 
             for t_idx, t in enumerate(tqdm(timesteps)):
+                TimestepManager.set_timestep_idx(t_idx)
                 latent_model_input = latents
                 timestep = [t]
 
