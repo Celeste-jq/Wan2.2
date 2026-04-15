@@ -1,9 +1,11 @@
 # Copyright 2024-2025 The Alibaba Wan Team Authors. All rights reserved.
 import argparse
+import inspect
 import logging
 import os
 import sys
 import warnings
+from contextlib import nullcontext
 from datetime import datetime
 from typing import List, Optional
 
@@ -28,6 +30,7 @@ from wan.utils.prompt_extend import DashScopePromptExpander, QwenPromptExpander
 from wan.utils.utils import save_video, str2bool
 from wan.distributed.parallel_mgr import ParallelConfig, init_parallel_env, finalize_parallel_env
 from wan.distributed.tp_applicator import TensorParallelApplicator
+from wan.utils.profiling import ProfilingContext
 
 from mindiesd import CacheConfig, CacheAgent
 
@@ -343,6 +346,95 @@ def patch_cast_buffers_for_float8():
         return None
 
 
+def _profiling_enabled(args):
+    return getattr(args, "profile_enabled", False)
+
+
+def _build_profile_run_root(args, rank):
+    run_token = [None]
+    if rank == 0:
+        task_name = getattr(args, "task", "task").replace("/", "_")
+        run_token[0] = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{task_name}"
+    if dist.is_initialized():
+        dist.broadcast_object_list(run_token, src=0)
+    return os.path.abspath(os.path.join(args.profile_output_dir, run_token[0]))
+
+
+def _build_profiling_runtime(args, rank, world_size):
+    disabled = ProfilingContext(enabled=False, rank=rank, world_size=world_size)
+    if not _profiling_enabled(args):
+        return disabled, nullcontext()
+
+    try:
+        from torch_npu.profiler import (
+            profile,
+            ProfilerActivity,
+            tensorboard_trace_handler,
+            _ExperimentalConfig,
+            ProfilerLevel,
+            AiCMetrics,
+            ExportType,
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            "Profiling mode requires torch_npu.profiler in the target NPU environment."
+        ) from exc
+
+    run_root = _build_profile_run_root(args, rank)
+    rank_dir = os.path.join(run_root, f"rank{rank}")
+    profiling = ProfilingContext(
+        enabled=True,
+        rank=rank,
+        world_size=world_size,
+        output_dir=rank_dir,
+        emit_mstx=True,
+        summary_enabled=getattr(args, "profile_summary", True),
+    )
+    os.makedirs(profiling.trace_dir, exist_ok=True)
+
+    experimental_config = None
+    try:
+        exp_sig = inspect.signature(_ExperimentalConfig)
+        exp_kwargs = {}
+        level_map = {
+            "level0": "Level0",
+            "level1": "Level1",
+            "level2": "Level2",
+        }
+        profiler_level = level_map.get(
+            getattr(args, "profile_level", "level1").lower(), "Level1"
+        )
+        if "profiler_level" in exp_sig.parameters and hasattr(ProfilerLevel, profiler_level):
+            exp_kwargs["profiler_level"] = getattr(ProfilerLevel, profiler_level)
+        if "aic_metrics" in exp_sig.parameters and hasattr(AiCMetrics, "PipeUtilization"):
+            exp_kwargs["aic_metrics"] = AiCMetrics.PipeUtilization
+        if "mstx" in exp_sig.parameters:
+            exp_kwargs["mstx"] = True
+        elif "msprof_tx" in exp_sig.parameters:
+            exp_kwargs["msprof_tx"] = True
+        if "export_type" in exp_sig.parameters and hasattr(ExportType, "Text") and hasattr(ExportType, "Db"):
+            exp_kwargs["export_type"] = [ExportType.Text, ExportType.Db]
+        if "op_attr" in exp_sig.parameters:
+            exp_kwargs["op_attr"] = True
+        if "record_op_args" in exp_sig.parameters:
+            exp_kwargs["record_op_args"] = False
+        experimental_config = _ExperimentalConfig(**exp_kwargs)
+    except Exception as exc:
+        logging.warning("Falling back to profiler defaults because experimental config failed: %s", exc)
+
+    profiler_kwargs = {
+        "activities": [ProfilerActivity.CPU, ProfilerActivity.NPU],
+        "on_trace_ready": tensorboard_trace_handler(profiling.trace_dir),
+        "record_shapes": getattr(args, "profile_record_shapes", False),
+        "profile_memory": getattr(args, "profile_memory", False),
+        "with_stack": getattr(args, "profile_with_stack", False),
+    }
+    if experimental_config is not None:
+        profiler_kwargs["experimental_config"] = experimental_config
+
+    return profiling, profile(**profiler_kwargs)
+
+
 def generate(args):
     rank = int(os.getenv("RANK", 0))
     world_size = int(os.getenv("WORLD_SIZE", 1))
@@ -355,6 +447,8 @@ def generate(args):
         args.offload_model = False if world_size > 1 else True
         logging.info(
             f"offload_model is not specified, set to {args.offload_model}.")
+    profiling_runtime = ProfilingContext(enabled=False, rank=rank, world_size=world_size)
+    profiler_cm = nullcontext()
     if world_size > 1:
         torch.cuda.set_device(local_rank)
         dist.init_process_group(
@@ -390,6 +484,8 @@ def generate(args):
             world_size=world_size,
         )
         init_parallel_env(parallel_config)
+
+    profiling_runtime, profiler_cm = _build_profiling_runtime(args, rank, world_size)
 
     if args.vae_parallel:
         assert dist.is_initialized() and world_size > 1, "VAE Parallel only supports multi-card environment."
@@ -682,6 +778,7 @@ def generate(args):
             use_vae_parallel=args.vae_parallel,
             quant_dit_path=args.quant_dit_path
         )
+        wan_i2v.profiling_context = profiling_runtime
 
         transformer_low = wan_i2v.low_noise_model
         transformer_high = wan_i2v.high_noise_model
@@ -740,35 +837,50 @@ def generate(args):
                 block.cache = cache_low
                 block.args = args
 
-        logging.info("Warm up 2 steps ...")
-        video = wan_i2v.generate(
-            args.prompt,
-            img,
-            max_area=MAX_AREA_CONFIGS[args.size],
-            frame_num=args.frame_num,
-            shift=args.sample_shift,
-            sample_solver=args.sample_solver,
-            sampling_steps=2,
-            guide_scale=args.sample_guide_scale,
-            seed=args.base_seed,
-            offload_model=args.offload_model)
+        warmup_steps = getattr(args, "profile_warmup_steps", 2) if _profiling_enabled(args) else 2
+        if warmup_steps > 0:
+            logging.info(f"Warm up {warmup_steps} steps ...")
+            video = wan_i2v.generate(
+                args.prompt,
+                img,
+                max_area=MAX_AREA_CONFIGS[args.size],
+                frame_num=args.frame_num,
+                shift=args.sample_shift,
+                sample_solver=args.sample_solver,
+                sampling_steps=warmup_steps,
+                guide_scale=args.sample_guide_scale,
+                seed=args.base_seed,
+                offload_model=args.offload_model)
 
         logging.info("Generating video ...")
         stream.synchronize()
         begin = time.time()
-        video = wan_i2v.generate(
-            args.prompt,
-            img,
-            max_area=MAX_AREA_CONFIGS[args.size],
-            frame_num=args.frame_num,
-            shift=args.sample_shift,
-            sample_solver=args.sample_solver,
-            sampling_steps=args.sample_steps,
-            guide_scale=args.sample_guide_scale,
-            seed=args.base_seed,
-            offload_model=args.offload_model)
+        with profiler_cm:
+            video = wan_i2v.generate(
+                args.prompt,
+                img,
+                max_area=MAX_AREA_CONFIGS[args.size],
+                frame_num=args.frame_num,
+                shift=args.sample_shift,
+                sample_solver=args.sample_solver,
+                sampling_steps=args.sample_steps,
+                guide_scale=args.sample_guide_scale,
+                seed=args.base_seed,
+                offload_model=args.offload_model)
         stream.synchronize()
         end = time.time()
+        if _profiling_enabled(args):
+            profiling_runtime.set_metadata(
+                task=args.task,
+                prompt=args.prompt,
+                seed=args.base_seed,
+                measured_wall_time_sec=end - begin,
+                sample_steps=args.sample_steps,
+                size=args.size,
+                frame_num=args.frame_num,
+            )
+            profiling_runtime.write_summaries()
+            profiling_runtime.write_aggregate_summary()
         logging.info(f"Generating video used time {end - begin: .4f}s")
 
     if rank == 0:

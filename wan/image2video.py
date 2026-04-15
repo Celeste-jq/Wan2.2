@@ -37,6 +37,7 @@ from wan.distributed.parallel_mgr import (
     get_cfg_group
 )
 from .utils.utils import find_quant_config_file
+from .utils.profiling import ProfilingContext
 
 
 class WanI2V:
@@ -88,6 +89,7 @@ class WanI2V:
         self.t5_cpu = t5_cpu
         self.dit_fsdp = dit_fsdp
         self.init_on_cpu = init_on_cpu
+        self.profiling_context = None
 
         self.num_train_timesteps = config.num_train_timesteps
         self.boundary = config.boundary
@@ -311,6 +313,7 @@ class WanI2V:
                 - W: Frame width from max_area)
         """
         # preprocess
+        profiling = self.profiling_context or ProfilingContext(enabled=False, rank=self.rank)
         guide_scale = (guide_scale, guide_scale) if isinstance(
             guide_scale, float) else guide_scale
         img = TF.to_tensor(img).sub_(0.5).div_(0.5).to(self.device)
@@ -362,16 +365,18 @@ class WanI2V:
 
         # preprocess
         if not self.t5_cpu:
-            self.text_encoder.model.to(self.device)
-            context = self.text_encoder([input_prompt], self.device)
-            context_null = self.text_encoder([n_prompt], self.device)
-            if offload_model:
-                self.text_encoder.model.cpu()
+            with profiling.phase("TEXT_ENCODER"):
+                self.text_encoder.model.to(self.device)
+                context = self.text_encoder([input_prompt], self.device)
+                context_null = self.text_encoder([n_prompt], self.device)
+                if offload_model:
+                    self.text_encoder.model.cpu()
         else:
-            context = self.text_encoder([input_prompt], torch.device('cpu'))
-            context_null = self.text_encoder([n_prompt], torch.device('cpu'))
-            context = [t.to(self.device) for t in context]
-            context_null = [t.to(self.device) for t in context_null]
+            with profiling.phase("TEXT_ENCODER"):
+                context = self.text_encoder([input_prompt], torch.device('cpu'))
+                context_null = self.text_encoder([n_prompt], torch.device('cpu'))
+                context = [t.to(self.device) for t in context]
+                context_null = [t.to(self.device) for t in context_null]
 
         encode_input = torch.concat([
             torch.nn.functional.interpolate(
@@ -379,10 +384,11 @@ class WanI2V:
             ).transpose(0, 1),
             torch.zeros(3, F - 1, h, w)], dim=1).to(self.device)
 
-        with VAE_patch_parallel():
-            y = self.vae.encode([
-                encode_input
-            ])[0]
+        with profiling.phase("VAE_ENCODE"):
+            with VAE_patch_parallel():
+                y = self.vae.encode([
+                    encode_input
+                ])[0]
         y = torch.concat([msk, y])
 
         @contextmanager
@@ -458,23 +464,27 @@ class WanI2V:
                     t, boundary, offload_model)
                 sample_guide_scale = guide_scale[1] if t.item(
                 ) >= boundary else guide_scale[0]
+                phase_name = "DIT_HIGH" if t.item() >= boundary else "DIT_LOW"
 
                 if get_classifier_free_guidance_world_size() == 2:
-                    noise_pred = model(
-                        latent_model_input, t=timestep, **arg_all, t_idx=t_idx)[0].to(
-                            torch.device('cpu') if offload_model else self.device)
+                    with profiling.phase(phase_name):
+                        noise_pred = model(
+                            latent_model_input, t=timestep, **arg_all, t_idx=t_idx)[0].to(
+                                torch.device('cpu') if offload_model else self.device)
                     noise_pred_cond, noise_pred_uncond = get_cfg_group().all_gather(
                         noise_pred, separate_tensors=True
                     )
                     if offload_model:
                         torch.cuda.empty_cache()
                 else:
-                    noise_pred_cond = model(
-                        latent_model_input, t=timestep, **arg_c, t_idx=t_idx)[0]
+                    with profiling.phase(phase_name):
+                        noise_pred_cond = model(
+                            latent_model_input, t=timestep, **arg_c, t_idx=t_idx)[0]
                     if offload_model:
                         torch.cuda.empty_cache()
-                    noise_pred_uncond = model(
-                        latent_model_input, t=timestep, **arg_null, t_idx=t_idx)[0]
+                    with profiling.phase(phase_name):
+                        noise_pred_uncond = model(
+                            latent_model_input, t=timestep, **arg_null, t_idx=t_idx)[0]
                     if offload_model:
                         torch.cuda.empty_cache()
 
@@ -498,8 +508,9 @@ class WanI2V:
                 torch.cuda.empty_cache()
 
             if self.rank < 8:
-                with VAE_patch_parallel():
-                    videos = self.vae.decode(x0)
+                with profiling.phase("VAE_DECODE"):
+                    with VAE_patch_parallel():
+                        videos = self.vae.decode(x0)
 
         del noise, latent, x0
         del sample_scheduler
