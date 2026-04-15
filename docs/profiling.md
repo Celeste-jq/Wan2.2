@@ -85,3 +85,17 @@ These labels are intended for MindStudio or msprof timeline inspection and for t
 - Warm-up runs happen before the measured profiling run.
 - Profiling data is written per rank to avoid collisions under `torchrun`.
 - The current profiling entry point is intentionally limited to `i2v-A14B`, because that is the active validated target path for DiT/VAE module attribution.
+
+## Offline kernel analysis
+
+For offline module-level kernel analysis based on `kernel_detail.csv`, see:
+
+```text
+docs/kernel_analysis.md
+```
+
+The analysis script is:
+
+```text
+tools/analyze_module_kernels.py
+```
