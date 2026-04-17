@@ -124,7 +124,7 @@ def classify_kernel(name):
         return "conv"
 
     if any(token in lowered for token in [
-        "allgather", "all_gather", "alltoall", "all_to_all", "reducescatter",
+        "allgather", "all_gather", "alltoall", "all_to_all", "allreduce", "all_reduce", "reducescatter",
         "reduce_scatter", "broadcast", "hccl", "send", "recv", "memcpyasync"
     ]):
         return "communication"
