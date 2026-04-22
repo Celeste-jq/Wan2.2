@@ -154,6 +154,18 @@ def classify_kernel(name):
     return "other"
 
 
+def classify_hardware_class(category):
+    if category in {"matmul", "conv"}:
+        return "cube"
+    if category == "attention":
+        return "mixed"
+    if category == "communication":
+        return "communication"
+    if category in {"norm", "resize_pad", "cast_layout", "elementwise"}:
+        return "vector"
+    return "other"
+
+
 def parse_float(text):
     if text is None:
         return None
@@ -208,6 +220,7 @@ def load_kernel_rows(kernel_detail_path):
             row["end_us"] = end_us
             row["duration_us"] = duration_us
             row["category"] = classify_kernel(name)
+            row["hardware_class"] = classify_hardware_class(row["category"])
             rows.append(row)
 
     return fieldnames, rows
@@ -257,6 +270,8 @@ def slice_module_rows(rows, ranges, range_unit):
 def group_kernel_summary(module_rows):
     grouped = defaultdict(lambda: {
         "kernel_name": "",
+        "hardware_class": "",
+        "category": "",
         "call_count": 0,
         "total_overlap_us": 0.0,
     })
@@ -264,6 +279,8 @@ def group_kernel_summary(module_rows):
         name = row["kernel_name_norm"]
         slot = grouped[name]
         slot["kernel_name"] = name
+        slot["hardware_class"] = row["hardware_class"]
+        slot["category"] = row["category"]
         slot["call_count"] += 1
         slot["total_overlap_us"] += row["overlap_us"]
 
@@ -272,6 +289,8 @@ def group_kernel_summary(module_rows):
         avg = item["total_overlap_us"] / item["call_count"]
         results.append({
             "kernel_name": item["kernel_name"],
+            "hardware_class": item["hardware_class"],
+            "category": item["category"],
             "call_count": item["call_count"],
             "total_overlap_us": item["total_overlap_us"],
             "avg_overlap_us": avg,
@@ -283,6 +302,7 @@ def group_kernel_summary(module_rows):
 def group_category_summary(module_rows):
     grouped = defaultdict(lambda: {
         "category": "",
+        "hardware_class": "",
         "call_count": 0,
         "total_overlap_us": 0.0,
     })
@@ -290,6 +310,7 @@ def group_category_summary(module_rows):
         category = row["category"]
         slot = grouped[category]
         slot["category"] = category
+        slot["hardware_class"] = classify_hardware_class(category)
         slot["call_count"] += 1
         slot["total_overlap_us"] += row["overlap_us"]
 
@@ -298,6 +319,33 @@ def group_category_summary(module_rows):
         avg = item["total_overlap_us"] / item["call_count"]
         results.append({
             "category": item["category"],
+            "hardware_class": item["hardware_class"],
+            "call_count": item["call_count"],
+            "total_overlap_us": item["total_overlap_us"],
+            "avg_overlap_us": avg,
+        })
+    results.sort(key=lambda x: x["total_overlap_us"], reverse=True)
+    return results
+
+
+def group_hardware_summary(module_rows):
+    grouped = defaultdict(lambda: {
+        "hardware_class": "",
+        "call_count": 0,
+        "total_overlap_us": 0.0,
+    })
+    for row in module_rows:
+        hardware_class = row["hardware_class"]
+        slot = grouped[hardware_class]
+        slot["hardware_class"] = hardware_class
+        slot["call_count"] += 1
+        slot["total_overlap_us"] += row["overlap_us"]
+
+    results = []
+    for item in grouped.values():
+        avg = item["total_overlap_us"] / item["call_count"]
+        results.append({
+            "hardware_class": item["hardware_class"],
             "call_count": item["call_count"],
             "total_overlap_us": item["total_overlap_us"],
             "avg_overlap_us": avg,
@@ -353,19 +401,27 @@ def main():
         total_overlap_us = sum(row["overlap_us"] for row in module_rows)
         kernel_summary = group_kernel_summary(module_rows)
         category_summary = group_category_summary(module_rows)
+        hardware_summary = group_hardware_summary(module_rows)
 
         for row in kernel_summary:
             row["module_pct"] = row["total_overlap_us"] / total_overlap_us * 100.0
         for row in category_summary:
             row["module_pct"] = row["total_overlap_us"] / total_overlap_us * 100.0
+        for row in hardware_summary:
+            row["module_pct"] = row["total_overlap_us"] / total_overlap_us * 100.0
 
         kernel_summary = kernel_summary[:args.topk]
 
         kernel_fields = [
-            "kernel_name", "call_count", "total_overlap_us", "avg_overlap_us", "module_pct"
+            "kernel_name", "hardware_class", "category", "call_count", "total_overlap_us",
+            "avg_overlap_us", "module_pct"
         ]
         category_fields = [
-            "category", "call_count", "total_overlap_us", "avg_overlap_us", "module_pct"
+            "category", "hardware_class", "call_count", "total_overlap_us", "avg_overlap_us",
+            "module_pct"
+        ]
+        hardware_fields = [
+            "hardware_class", "call_count", "total_overlap_us", "avg_overlap_us", "module_pct"
         ]
 
         write_csv(
@@ -377,6 +433,11 @@ def main():
             out_dir / f"{module_name}_category_summary.csv",
             category_summary,
             category_fields,
+        )
+        write_csv(
+            out_dir / f"{module_name}_hardware_summary.csv",
+            hardware_summary,
+            hardware_fields,
         )
 
         raw_fields = sorted(module_rows[0].keys())
@@ -397,6 +458,7 @@ def main():
         print(f"     total: {total_overlap_us / 1000.0:.3f} ms")
         print(f"     top kernels: {out_dir / f'{module_name}_top_kernels.csv'}")
         print(f"     category summary: {out_dir / f'{module_name}_category_summary.csv'}")
+        print(f"     hardware summary: {out_dir / f'{module_name}_hardware_summary.csv'}")
 
     if all_module_rows:
         all_module_rows.sort(key=lambda x: x["module_total_us"], reverse=True)
